@@ -88,6 +88,7 @@
             const [isLoading, setIsLoading] = useState(true);
             const calendarRef = useRef(null);
             const toastTimeoutRef = useRef(null);
+            const doubleDutyDaysSet = useRef(new Set());
 
             const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -133,6 +134,7 @@
                 const kimRestDays = new Set(kimRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const parkRestDays = new Set(parkRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const bothWorkDays = new Set(bothWork.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+                doubleDutyDaysSet.current = bothWorkDays;
 
                 let kimWorkCount = 0;
                 let parkWorkCount = 0;
@@ -301,7 +303,7 @@
                 }
                 
                 const kimRestDays = new Set(kimMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                const parkRestDays = new Set(parkMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+                const parkRestDays = new Set(parkRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const currentDoubleDutySet = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 
                 const { kimDays: baseKimDays, parkDays: baseParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, '');
@@ -323,7 +325,7 @@
                 for (const day of availableDays) {
                     if (kimRestDays.has(day) || parkRestDays.has(day) || currentDoubleDutySet.has(day)) continue; 
                     const tempDoubleDutyDays = [...currentDoubleDutySet, day].join(',');
-                    const { kimDays, parkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, tempDoubleDutyDays);
+                    const { kimDays, parkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkRest, tempDoubleDutyDays);
                     if (kimDays === 16 && parkDays === 16) {
                         suggestions.push({ days: [day], kim: kimDays, park: parkDays });
                     }
@@ -407,12 +409,11 @@
                 const calendarElement = calendarRef.current;
                 
                 // html2canvas 옵션을 조정하여 전체 요소를 캡처하고, 잘림 현상을 방지합니다.
-                // 고정된 창 크기를 제거하고, 요소의 실제 크기를 기반으로 캡처합니다.
+                // 요소의 실제 크기를 기반으로 캔버스를 생성합니다.
                 html2canvas(calendarElement, {
                     scale: 3, // 고해상도 이미지 생성을 위해 스케일 증가
                     useCORS: true,
-                    // 잘림 현상 방지를 위해 windowWidth/Height 옵션을 제거합니다.
-                    // 이렇게 하면 html2canvas가 요소의 실제 크기에 맞춰 캔버스를 생성합니다.
+                    // 이전에 사용된 windowWidth/Height 옵션을 제거하여 요소의 실제 크기에 맞춰 캔버스를 생성합니다.
                 }).then(canvas => {
                     const imgData = canvas.toDataURL('image/png');
                     const link = document.createElement('a');
@@ -538,7 +539,7 @@
                             <div className="h-16 w-px bg-gray-300 mx-4"></div>
                             <button
                                 onClick={() => setHighlightedPerson(h => h === 'park' ? null : 'park')}
-                                className={`flex-1 flex flex-col items-center p-2 rounded-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-red-300 transform hover:scale-105 ${highlightedPerson === 'park' ? 'bg-red-100 ring-2 ring-red-500' : 'bg-white'}`}
+                                className={`flex-1 flex flex-col items-center p-2 rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-red-300 ${highlightedPerson === 'park' ? 'bg-red-100 ring-2 ring-red-500' : 'bg-white'}`}
                             >
                                 <div className="font-bold text-base md:text-lg text-red-600 truncate">{parkName}</div>
                                 <div className="text-xl md:text-2xl font-extrabold">{parkWorkDays}일</div>
@@ -560,37 +561,50 @@
                                 let kimColorClass, parkColorClass;
                                 let kimFontClass, parkFontClass;
                                 
-                                // 기본 색상 설정
-                                if (day.kim === '근무') {
-                                    kimColorClass = 'text-blue-600';
-                                } else {
-                                    kimColorClass = 'text-blue-400';
-                                }
-
-                                if (day.park === '근무') {
-                                    parkColorClass = 'text-red-600';
-                                } else {
-                                    parkColorClass = 'text-red-400';
-                                }
+                                // '전원 근무일'인 경우 기본 스타일을 정의
+                                const isDoubleDutyDay = day.isCurrentMonth && doubleDutyDaysSet.current.has(day.date);
                                 
-                                // 하이라이트 상태에 따른 색상 및 폰트 변경
-                                if (highlightedPerson === 'kim') {
+                                if (isDoubleDutyDay) {
+                                    kimColorClass = 'text-blue-600';
+                                    parkColorClass = 'text-red-600';
                                     kimFontClass = 'font-bold';
-                                    parkColorClass = 'text-gray-400';
-                                } else if (highlightedPerson === 'park') {
                                     parkFontClass = 'font-bold';
-                                    kimColorClass = 'text-gray-400';
                                 } else {
-                                    kimFontClass = 'font-normal';
-                                    parkFontClass = 'font-normal';
+                                    // 기본 색상 설정
+                                    if (day.kim === '근무') {
+                                        kimColorClass = 'text-blue-600';
+                                    } else {
+                                        kimColorClass = 'text-blue-400';
+                                    }
+
+                                    if (day.park === '근무') {
+                                        parkColorClass = 'text-red-600';
+                                    } else {
+                                        parkColorClass = 'text-red-400';
+                                    }
+                                    
+                                    // 하이라이트 상태에 따른 색상 및 폰트 변경
+                                    if (highlightedPerson === 'kim') {
+                                        kimFontClass = 'font-bold';
+                                        parkColorClass = 'text-gray-400';
+                                    } else if (highlightedPerson === 'park') {
+                                        parkFontClass = 'font-bold';
+                                        kimColorClass = 'text-gray-400';
+                                    } else {
+                                        kimFontClass = 'font-normal';
+                                        parkFontClass = 'font-normal';
+                                    }
                                 }
 
-                                // 하이라이트 보더 클래스 (PC/모바일 구분)
-                                const highlightClass = highlightedPerson && day.isCurrentMonth && 
-                                                      ((highlightedPerson === 'kim' && day.kim === '근무') || 
-                                                       (highlightedPerson === 'park' && day.park === '근무'))
-                                    ? `md:border-4 border-2 ${highlightedPerson === 'kim' ? 'border-blue-500' : 'border-red-500'}`
-                                    : 'border-gray-200';
+                                // 보더 클래스 (PC/모바일 구분)
+                                let highlightClass = 'border-gray-200';
+                                if (isDoubleDutyDay) {
+                                    highlightClass = 'border-4 border-green-500';
+                                } else if (highlightedPerson && day.isCurrentMonth && 
+                                           ((highlightedPerson === 'kim' && day.kim === '근무') || 
+                                            (highlightedPerson === 'park' && day.park === '근무'))) {
+                                    highlightClass = `md:border-4 border-2 ${highlightedPerson === 'kim' ? 'border-blue-500' : 'border-red-500'}`;
+                                }
                                     
                                 const dayCellClass = day.isCurrentMonth ? '' : 'bg-gray-100 text-gray-400';
 
