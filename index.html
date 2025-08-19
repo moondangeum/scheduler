@@ -19,7 +19,7 @@
     <script type="text/babel">
         // 이 React 웹 앱은 2인 교대 야간 근무표를 생성하고 관리합니다.
         // 3일 근무, 3일 휴무의 고정 패턴을 기반으로 하며, 달력과 표 형태로 볼 수 있습니다.
-        // 관리자 모드(/admin)와 근무자 모드로 나뉘며, 관리자만 설정을 변경할 수 있습니다.
+        // 관리자 모드(/admin 또는 URL 매개변수 ?admin=true)와 근무자 모드로 나뉘며, 관리자만 설정을 변경할 수 있습니다.
         //
         // 주요 기능:
         // - 시작 날짜, 전월 마지막 근무자, 이름 등을 설정하여 근무표 생성
@@ -31,15 +31,16 @@
         const { useState, useEffect } = React;
 
         const App = () => {
-            // URL 경로를 확인하여 관리자 모드인지 여부를 판단합니다.
-            const isManagerView = window.location.pathname.endsWith('/admin');
+            // URL 경로 또는 매개변수를 확인하여 관리자 모드인지 여부를 판단합니다.
+            // GitHub Pages와 같은 정적 서버에서는 URL 경로가 바뀌지 않으므로,
+            // URL 매개변수 `?admin=true`를 사용해 관리자 모드를 구분합니다.
+            const isManagerView = window.location.pathname.endsWith('/admin') || new URLSearchParams(window.location.search).get('admin') === 'true';
             const isEmployeeView = !isManagerView;
 
             // 뷰 상태 ('table' 또는 'calendar')를 관리합니다.
             const [view, setView] = useState(isManagerView ? 'table' : 'calendar');
             // 시작 날짜를 관리합니다.
             const [startDate, setStartDate] = useState(() => {
-                // 근무자 모드인 경우, 오늘 날짜를 기본값으로 설정합니다.
                 const today = new Date();
                 return today.toISOString().split('T')[0];
             });
@@ -323,12 +324,17 @@
                 setParkWorkDays(parkCount);
             }, [scheduleData]);
 
-            // 컴포넌트가 처음 렌더링될 때 근무자 모드인 경우 근무표를 생성합니다.
+            // 컴포넌트가 처음 렌더링될 때 근무표를 생성합니다.
             useEffect(() => {
-                if (isEmployeeView) {
-                    generateSchedule();
+                // 근무자 모드일 때만 오늘 날짜로 초기화하는 로직을 제거하고,
+                // 항상 페이지 로드 시 근무표를 생성하도록 수정했습니다.
+                if (!startDate) {
+                     const today = new Date();
+                     setStartDate(today.toISOString().split('T')[0]);
+                } else {
+                     generateSchedule();
                 }
-            }, [isEmployeeView]);
+            }, [startDate]);
 
             /**
              * Renders the schedule in a table format.
