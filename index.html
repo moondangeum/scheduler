@@ -4,14 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>2인 교대 야간 근무표</title>
-    <!-- Tailwind CSS CDN을 로드합니다. -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React 및 ReactDOM CDN을 로드하여 React 앱을 브라우저에서 직접 실행합니다. -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel을 로드하여 JSX 문법을 변환합니다. -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Firebase SDKs를 로드합니다. -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -37,12 +33,10 @@
             doc, setDoc, onSnapshot
         };
     </script>
-    <!-- html2canvas 및 jspdf 라이브러리를 로드하여 이미지 및 PDF 내보내기 기능을 구현합니다. -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body class="bg-gray-100 font-sans antialiased">
-    <!-- React 앱이 렌더링될 루트 요소 -->
     <div id="root"></div>
 
     <script type="text/babel">
@@ -581,6 +575,15 @@
                                     kimTextClass = `text-sm sm:text-base ${day.kim === '근무' ? 'font-normal text-blue-600' : 'font-normal text-blue-400'}`;
                                     parkTextClass = `text-sm sm:text-base ${day.park === '근무' ? 'font-normal text-red-600' : 'font-normal text-red-400'}`;
                                 }
+                                
+                                // 모바일용 텍스트 클래스
+                                const mobileTextClass = `text-xs md:hidden`;
+                                // PC용 텍스트 클래스
+                                const pcTextClass = `text-sm md:text-base hidden md:block`;
+                                
+                                // 근무/휴무 텍스트
+                                const kimStatusText = day.kim === '근무' ? `근무` : `휴무`;
+                                const parkStatusText = day.park === '근무' ? `근무` : `휴무`;
 
                                 return (
                                     <div 
@@ -591,8 +594,20 @@
                                         {day.isCurrentMonth ? (
                                             <>
                                                 <div className="text-gray-900 font-bold mb-1">{day.date}</div>
-                                                <div className={kimTextClass}>{day.kim === '근무' ? `근무` : `휴무`}</div>
-                                                <div className={parkTextClass}>{day.park === '근무' ? `근무` : `휴무`}</div>
+                                                {/* PC 버전 */}
+                                                <div className={`${pcTextClass} truncate w-full px-1 ${day.kim === '근무' ? 'font-normal text-blue-600' : 'font-normal text-blue-400'}`}>
+                                                    {kimName} {kimStatusText}
+                                                </div>
+                                                <div className={`${pcTextClass} truncate w-full px-1 ${day.park === '근무' ? 'font-normal text-red-600' : 'font-normal text-red-400'}`}>
+                                                    {parkName} {parkStatusText}
+                                                </div>
+                                                {/* 모바일 버전 */}
+                                                <div className={`${mobileTextClass} ${day.kim === '근무' ? 'font-normal text-blue-600' : 'font-normal text-blue-400'}`}>
+                                                    {kimStatusText}
+                                                </div>
+                                                <div className={`${mobileTextClass} ${day.park === '근무' ? 'font-normal text-red-600' : 'font-normal text-red-400'}`}>
+                                                    {parkStatusText}
+                                                </div>
                                             </>
                                         ) : (
                                             <div className="w-full h-full"></div>
@@ -640,8 +655,8 @@
             }
 
             return (
-                <div className="p-4 md:p-8 min-h-screen">
-                    <div className="w-full mx-auto bg-white shadow-xl rounded-2xl p-6 md:p-10 border border-gray-200">
+                <div className="p-4 md:p-8 min-h-screen flex justify-center">
+                    <div className="w-full max-w-7xl bg-white shadow-xl rounded-2xl p-6 md:p-10 border border-gray-200">
                         <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">2인 교대 야간 근무표</h1>
                         
                         <div className="space-y-4 mb-8">
