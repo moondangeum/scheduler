@@ -306,6 +306,7 @@
             
             /**
              * 근무 일수를 정확히 16일에 맞추기 위한 '전원 근무일'을 제안합니다.
+             * 이때, 전원 근무일 사이에는 최소 2일의 휴무일을 보장합니다.
              */
             const suggestDoubleDutyDays = () => {
                 if (!startDate) {
@@ -314,7 +315,7 @@
                 }
                 
                 const kimRestDays = new Set(kimMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                const parkRestDays = new Set(parkMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+                const parkRestDays = new Set(parkRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const currentDoubleDutySet = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 
                 // 전원 근무일을 제외한 기본 근무 일수 계산
@@ -339,8 +340,14 @@
 
                 // 단일 날짜 추가로 16일이 되는 경우 탐색
                 for (const day of availableDays) {
-                    // 이미 전원 근무일이거나, 필수 휴무일인 경우 건너뛰기
+                    // 필수 휴무일이거나 이미 전원 근무일인 경우 건너뛰기
                     if (currentDoubleDutySet.has(day) || kimRestDays.has(day) || parkRestDays.has(day)) {
+                        continue;
+                    }
+                    
+                    // 새로운 전원 근무일이 기존 전원 근무일과 2일 이내로 붙어있는지 확인
+                    const hasNearbyDoubleDuty = Array.from(currentDoubleDutySet).some(d => Math.abs(d - day) <= 2);
+                    if (hasNearbyDoubleDuty) {
                         continue;
                     }
 
@@ -359,6 +366,15 @@
                             const day1 = availableDays[i];
                             const day2 = availableDays[j];
                             if (currentDoubleDutySet.has(day1) || currentDoubleDutySet.has(day2) || kimRestDays.has(day1) || kimRestDays.has(day2) || parkRestDays.has(day1) || parkRestDays.has(day2)) {
+                                continue;
+                            }
+                            
+                            // 두 날짜가 서로 너무 가깝거나, 기존 전원 근무일과 너무 가까운지 확인
+                            if (Math.abs(day2 - day1) <= 2) {
+                                continue;
+                            }
+                            const hasNearbyDoubleDuty = Array.from(currentDoubleDutySet).some(d => Math.abs(d - day1) <= 2 || Math.abs(d - day2) <= 2);
+                            if (hasNearbyDoubleDuty) {
                                 continue;
                             }
                             
