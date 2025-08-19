@@ -162,7 +162,7 @@
             }
         } catch (e) {
             console.error("Firebase Auth Error:", e);
-            alert("Firebase 인증에 문제가 발생했습니다. 콘솔을 확인해주세요.");
+            // alert("Firebase 인증에 문제가 발생했습니다. 콘솔을 확인해주세요."); // Use a custom modal instead of alert
         }
 
         onAuthStateChanged(auth, (user) => {
