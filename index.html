@@ -428,7 +428,8 @@
                             }
                             
                             const tempDoubleDutySet = new Set([...currentDoubleDutySet, day1, day2]);
-                            const { kimDays: tempKimDays, tempParkDays: tempParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, Array.from(tempDoubleDutySet).join(','));
+                            // ** 수정: 'tempParkDays: tempParkDays'는 잘못된 변수 이름입니다. 'parkDays: tempParkDays'로 수정합니다. **
+                            const { kimDays: tempKimDays, parkDays: tempParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, Array.from(tempDoubleDutySet).join(','));
                             
                             if (tempKimDays === 16 && tempParkDays === 16) {
                                 suggestions.push({ days: [day1, day2], kim: tempKimDays, park: tempParkDays });
