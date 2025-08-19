@@ -4,10 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>2인 교대 야간 근무표</title>
+    <!-- Tailwind CSS CDN을 로드합니다. -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React 및 ReactDOM CDN을 로드하여 React 앱을 브라우저에서 직접 실행합니다. -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel을 로드하여 JSX 문법을 변환합니다. -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Firebase SDKs를 로드합니다. -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -33,10 +37,12 @@
             doc, setDoc, onSnapshot
         };
     </script>
+    <!-- html2canvas 및 jspdf 라이브러리를 로드하여 이미지 및 PDF 내보내기 기능을 구현합니다. -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body class="bg-gray-100 font-sans antialiased">
+    <!-- React 앱이 렌더링될 루트 요소 -->
     <div id="root"></div>
 
     <script type="text/babel">
@@ -551,31 +557,45 @@
                                 return <div key={day} className={textColorClass}>{day}</div>;
                             })}
                         </div>
-                        <div className="grid grid-cols-7 gap-1 mt-2">
+                        <div className="grid grid-cols-7 gap-1 mt-2 text-center">
                             {calendarDays.map((day, index) => {
-                                const isHighlighted = day && 
-                                                      ((highlightedPerson === 'kim' && day.kim === '근무') || 
-                                                       (highlightedPerson === 'park' && day.park === '근무'));
+                                let kimColorClass, parkColorClass;
+                                let kimFontClass, parkFontClass;
                                 
-                                const highlightClass = isHighlighted && day.isCurrentMonth
-                                    ? (highlightedPerson === 'kim' ? 'border-4 border-blue-500' : 'border-4 border-red-500')
+                                // 기본 색상 설정
+                                if (day.kim === '근무') {
+                                    kimColorClass = 'text-blue-600';
+                                } else {
+                                    kimColorClass = 'text-blue-400';
+                                }
+
+                                if (day.park === '근무') {
+                                    parkColorClass = 'text-red-600';
+                                } else {
+                                    parkColorClass = 'text-red-400';
+                                }
+                                
+                                // 하이라이트 상태에 따른 색상 및 폰트 변경
+                                if (highlightedPerson === 'kim') {
+                                    kimFontClass = 'font-bold';
+                                    parkColorClass = 'text-gray-400';
+                                } else if (highlightedPerson === 'park') {
+                                    parkFontClass = 'font-bold';
+                                    kimColorClass = 'text-gray-400';
+                                } else {
+                                    kimFontClass = 'font-normal';
+                                    parkFontClass = 'font-normal';
+                                }
+
+                                // 하이라이트 보더 클래스 (PC/모바일 구분)
+                                const highlightClass = highlightedPerson && day.isCurrentMonth && 
+                                                      ((highlightedPerson === 'kim' && day.kim === '근무') || 
+                                                       (highlightedPerson === 'park' && day.park === '근무'))
+                                    ? `md:border-4 border-2 ${highlightedPerson === 'kim' ? 'border-blue-500' : 'border-red-500'}`
                                     : 'border-gray-200';
                                     
                                 const dayCellClass = day.isCurrentMonth ? '' : 'bg-gray-100 text-gray-400';
 
-                                let kimTextClass, parkTextClass;
-
-                                if (highlightedPerson === 'kim') {
-                                    kimTextClass = `text-sm sm:text-base ${day.kim === '근무' ? 'font-bold text-blue-600' : 'font-normal text-blue-400'}`;
-                                    parkTextClass = `text-sm sm:text-base text-gray-400`;
-                                } else if (highlightedPerson === 'park') {
-                                    kimTextClass = `text-sm sm:text-base text-gray-400`;
-                                    parkTextClass = `text-sm sm:text-base ${day.park === '근무' ? 'font-bold text-red-600' : 'font-normal text-red-400'}`;
-                                } else {
-                                    kimTextClass = `text-sm sm:text-base ${day.kim === '근무' ? 'font-normal text-blue-600' : 'font-normal text-blue-400'}`;
-                                    parkTextClass = `text-sm sm:text-base ${day.park === '근무' ? 'font-normal text-red-600' : 'font-normal text-red-400'}`;
-                                }
-                                
                                 // 모바일용 텍스트 클래스
                                 const mobileTextClass = `text-xs md:hidden`;
                                 // PC용 텍스트 클래스
@@ -595,17 +615,17 @@
                                             <>
                                                 <div className="text-gray-900 font-bold mb-1">{day.date}</div>
                                                 {/* PC 버전 */}
-                                                <div className={`${pcTextClass} truncate w-full px-1 ${day.kim === '근무' ? 'font-normal text-blue-600' : 'font-normal text-blue-400'}`}>
+                                                <div className={`${pcTextClass} truncate w-full px-1 ${kimColorClass} ${kimFontClass}`}>
                                                     {kimName} {kimStatusText}
                                                 </div>
-                                                <div className={`${pcTextClass} truncate w-full px-1 ${day.park === '근무' ? 'font-normal text-red-600' : 'font-normal text-red-400'}`}>
+                                                <div className={`${pcTextClass} truncate w-full px-1 ${parkColorClass} ${parkFontClass}`}>
                                                     {parkName} {parkStatusText}
                                                 </div>
                                                 {/* 모바일 버전 */}
-                                                <div className={`${mobileTextClass} ${day.kim === '근무' ? 'font-normal text-blue-600' : 'font-normal text-blue-400'}`}>
+                                                <div className={`${mobileTextClass} ${kimColorClass} ${kimFontClass}`}>
                                                     {kimStatusText}
                                                 </div>
-                                                <div className={`${mobileTextClass} ${day.park === '근무' ? 'font-normal text-red-600' : 'font-normal text-red-400'}`}>
+                                                <div className={`${mobileTextClass} ${parkColorClass} ${parkFontClass}`}>
                                                     {parkStatusText}
                                                 </div>
                                             </>
