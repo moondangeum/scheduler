@@ -1,350 +1,395 @@
-import React, { useState, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, query, where, deleteDoc } from 'firebase/firestore';
-import { ChevronLeftIcon, ChevronRightIcon, PlusCircleIcon, PencilIcon, TrashIcon, XCircleIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>근무표 달력</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(5px);
+        }
+        .calendar-day-cell {
+            min-height: 112px;
+            overflow-y: auto;
+            position: relative;
+        }
+        .day-label {
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+        }
+        .calendar-day-cell:hover .day-label {
+            background-color: #f3f4f6;
+            color: #4b5563;
+        }
+        .rounded-button {
+            transition: transform 0.1s ease-in-out;
+        }
+        .rounded-button:active {
+            transform: scale(0.95);
+        }
+    </style>
+    <!-- 파비콘 SVG -->
+    <link rel="icon" href="data:image/svg+xml;charset=utf8,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%0A%3Cpath%20d%3D%22M12%202C6.48%202%202%206.48%202%2012C2%2017.52%206.48%2022%2012%2022C17.52%2022%2022%2017.52%2022%2012C22%206.48%2017.52%202%2012%202ZM17%2013H13V17H11V13H7V11H11V7H13V11H17V13Z%22%20fill%3D%22%23fff%22%2F%3E%0A%3C%2Fsvg%3E">
+</head>
+<body class="bg-gray-100 text-gray-800">
 
-// 파비콘 SVG
-const faviconSvg = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM17 13H13V17H11V13H7V11H11V7H13V11H17V13Z" fill="#fff"/>
-</svg>`;
+<div class="flex justify-center items-center min-h-screen p-4">
+    <div class="w-full max-w-2xl p-6 bg-white shadow-xl rounded-2xl">
+        <!-- Calendar Header -->
+        <div class="flex justify-between items-center mb-6">
+            <button id="prevMonth" class="p-2 rounded-full hover:bg-gray-200 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6 text-gray-500">
+                    <path fill-rule="evenodd" d="M11.03 4.97a.75.75 0 0 1 0 1.06L4.56 12l6.47 6.47a.75.75 0 1 1-1.06 1.06L2.47 12.53a.75.75 0 0 1 0-1.06l7.5-7.5a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd" />
+                </svg>
+            </button>
+            <h2 id="monthYear" class="text-2xl font-semibold text-center"></h2>
+            <button id="nextMonth" class="p-2 rounded-full hover:bg-gray-200 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6 text-gray-500">
+                    <path fill-rule="evenodd" d="M12.97 4.97a.75.75 0 0 1 1.06 0l7.5 7.5a.75.75 0 0 1 0 1.06l-7.5 7.5a.75.75 0 1 1-1.06-1.06L19.44 12 12.97 5.53a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+                </svg>
+            </button>
+        </div>
 
-// Headless UI의 @headlessui/react 대신 Heroicons를 사용하여 간단하게 아이콘을 추가합니다.
-// <script src="https://cdn.tailwindcss.com"></script>
-// <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-// <style>
-//   body { font-family: 'Inter', sans-serif; }
-//   .modal-overlay {
-//     background-color: rgba(0, 0, 0, 0.75);
-//     backdrop-filter: blur(5px);
-//   }
-//   .calendar-day-cell:hover .day-label {
-//     background-color: #f3f4f6;
-//     color: #4b5563;
-//   }
-//   .rounded-button {
-//     transition: transform 0.1s ease-in-out;
-//   }
-//   .rounded-button:active {
-//     transform: scale(0.95);
-//   }
-//   .transition-transform-scale {
-//     transition-property: transform;
-//     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-//     transition-duration: 150ms;
-//     transform: scale(1);
-//   }
-// </style>
+        <!-- Weekdays -->
+        <div class="grid grid-cols-7 text-center font-medium text-sm text-gray-500 mb-2">
+            <div>일</div>
+            <div>월</div>
+            <div>화</div>
+            <div>수</div>
+            <div>목</div>
+            <div>금</div>
+            <div>토</div>
+        </div>
 
-const App = () => {
-    // Firebase 설정과 연결
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [userId, setUserId] = useState(null);
-    const [isAuthReady, setIsAuthReady] = useState(false);
+        <!-- Calendar Grid -->
+        <div id="calendarGrid" class="grid grid-cols-7 gap-1">
+            <!-- Days will be rendered here by JavaScript -->
+        </div>
+    </div>
+</div>
 
-    // 날짜 상태
-    const [currentDate, setCurrentDate] = useState(new Date());
+<!-- Modal -->
+<div id="modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay hidden">
+    <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl transition-transform-scale">
+        <div class="flex justify-between items-center mb-4">
+            <h3 id="modalTitleText" class="text-xl font-bold"></h3>
+            <button id="closeModal" class="p-1 rounded-full hover:bg-gray-200 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6 text-gray-500">
+                    <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+                </svg>
+            </button>
+        </div>
+        <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700">날짜</label>
+            <p id="modalDate" class="mt-1 p-2 bg-gray-100 rounded-md"></p>
+        </div>
+        <div class="mb-4">
+            <label for="eventTitle" class="block text-sm font-medium text-gray-700">제목</label>
+            <input type="text" id="eventTitle" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" />
+        </div>
+        <div class="mb-4">
+            <label for="eventDescription" class="block text-sm font-medium text-gray-700">설명 (선택 사항)</label>
+            <textarea id="eventDescription" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"></textarea>
+        </div>
+        <div class="flex justify-end space-x-3">
+            <button id="cancelButton" class="px-4 py-2 rounded-full text-sm font-semibold bg-gray-200 hover:bg-gray-300 transition-colors">
+                취소
+            </button>
+            <button id="saveButton" class="px-4 py-2 rounded-full text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition-colors flex items-center space-x-1">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4">
+                    <path fill-rule="evenodd" d="M19.916 4.626a.75.75 0 0 1 .208 1.04l-9.5 13.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 8.894-12.637a.75.75 0 0 1 1.04-.208Z" clip-rule="evenodd" />
+                </svg>
+                <span>저장</span>
+            </button>
+        </div>
+    </div>
+</div>
 
-    // 모달 상태
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [modalTitle, setModalTitle] = useState('');
-    const [modalDescription, setModalDescription] = useState('');
-    const [selectedDate, setSelectedDate] = useState(null);
-    const [editingEvent, setEditingEvent] = useState(null);
+<script type="module">
+    // Firebase CDN imports
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, query, where, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    // 이벤트 상태
-    const [events, setEvents] = useState([]);
+    // Global variables from the environment
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-    useEffect(() => {
-        // Firebase 초기화
-        let app;
+    // Firebase initialization
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    let userId = null;
+
+    // DOM elements
+    const monthYearEl = document.getElementById('monthYear');
+    const prevMonthBtn = document.getElementById('prevMonth');
+    const nextMonthBtn = document.getElementById('nextMonth');
+    const calendarGrid = document.getElementById('calendarGrid');
+    const modal = document.getElementById('modal');
+    const modalTitleText = document.getElementById('modalTitleText');
+    const modalDateText = document.getElementById('modalDate');
+    const eventTitleInput = document.getElementById('eventTitle');
+    const eventDescriptionTextarea = document.getElementById('eventDescription');
+    const closeModalBtn = document.getElementById('closeModal');
+    const saveButton = document.getElementById('saveButton');
+    const cancelButton = document.getElementById('cancelButton');
+
+    // Calendar state
+    let currentDate = new Date();
+    let events = [];
+    let editingEventId = null;
+
+    // Worker names
+    const kimName = "김철수";
+    const parkName = "박영희";
+
+    // Authentication and data fetching logic
+    async function setupFirebase() {
         try {
-            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-            app = initializeApp(firebaseConfig);
-            setDb(getFirestore(app));
-            setAuth(getAuth(app));
+            if (initialAuthToken) {
+                await signInWithCustomToken(auth, initialAuthToken);
+            } else {
+                await signInAnonymously(auth);
+            }
         } catch (e) {
-            console.error("Firebase 초기화 오류:", e);
+            console.error("Firebase Auth Error:", e);
+            alert("Firebase 인증에 문제가 발생했습니다. 콘솔을 확인해주세요.");
         }
-    }, []);
 
-    useEffect(() => {
-        if (auth && db) {
-            const unsub = onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                } else {
-                    const anonymousUser = await signInAnonymously(auth);
-                    setUserId(anonymousUser.user.uid);
-                }
-                setIsAuthReady(true);
-            });
-            return () => unsub();
-        }
-    }, [auth, db]);
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                userId = user.uid;
+                startDataListener();
+            } else {
+                console.log("No user signed in.");
+            }
+        });
+    }
 
-    // 이벤트 실시간 동기화
-    useEffect(() => {
-        if (!isAuthReady || !db || !userId) return;
+    function startDataListener() {
+        if (!userId) return;
 
-        const eventsCollection = collection(db, 'artifacts', typeof __app_id !== 'undefined' ? __app_id : 'default-app-id', 'users', userId, 'events');
+        const eventsCollection = collection(db, 'artifacts', appId, 'users', userId, 'events');
         const q = query(eventsCollection);
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedEvents = snapshot.docs.map(doc => ({
+        onSnapshot(q, (snapshot) => {
+            events = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
-            setEvents(fetchedEvents);
+            renderCalendar();
         }, (error) => {
-            console.error("이벤트 가져오기 오류:", error);
+            console.error("이벤트 실시간 동기화 오류:", error);
         });
+    }
 
-        return () => unsubscribe();
-    }, [isAuthReady, db, userId]);
+    // Schedule logic for 3-on, 3-off pattern
+    const getSchedule = (year, month) => {
+        const schedule = [];
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        let cycle = 0; // 0-2: Kim, 3-5: Park
 
-    // 파비콘 추가 (DOM 조작)
-    useEffect(() => {
-      const link = document.createElement('link');
-      link.rel = 'icon';
-      link.href = `data:image/svg+xml;charset=utf8,${encodeURIComponent(faviconSvg)}`;
-      document.head.appendChild(link);
-      return () => {
-        document.head.removeChild(link);
-      };
-    }, []);
+        // To handle previous month's state, a more complex logic would be needed.
+        // For simplicity, we'll start a fresh cycle each month.
+        // A more advanced version would use Firestore to track the last person on duty.
 
-    const weekDays = ['일', '월', '화', '수', '목', '금', '토'];
+        for (let i = 1; i <= daysInMonth; i++) {
+            const kimWorks = cycle < 3;
+            const parkWorks = cycle >= 3;
+            schedule[i] = { kim: kimWorks, park: parkWorks };
+            cycle = (cycle + 1) % 6;
+        }
+        return schedule;
+    };
 
-    const getDaysInMonth = (date) => {
-        const year = date.getFullYear();
-        const month = date.getMonth();
+    // Calendar rendering logic
+    const renderCalendar = () => {
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth();
+        monthYearEl.textContent = `${year}년 ${month + 1}월`;
+
         const firstDayOfMonth = new Date(year, month, 1);
         const lastDayOfMonth = new Date(year, month + 1, 0);
-        const days = [];
-
-        // 이전 달의 마지막 날짜들
         const firstDayOfWeek = firstDayOfMonth.getDay();
+        const daysInMonth = lastDayOfMonth.getDate();
+        
+        const schedule = getSchedule(year, month);
+        
+        let dayCellsHtml = '';
+
+        // Add padding for previous month's days
         const prevMonthLastDay = new Date(year, month, 0).getDate();
         for (let i = firstDayOfWeek; i > 0; i--) {
-            days.push({
-                day: prevMonthLastDay - i + 1,
-                isCurrentMonth: false,
-                date: new Date(year, month - 1, prevMonthLastDay - i + 1)
-            });
+            dayCellsHtml += `<div class="calendar-day-cell p-1 rounded-lg bg-gray-50 text-gray-400">
+                <span class="day-label text-sm font-semibold rounded-full w-8 h-8 flex items-center justify-center">${prevMonthLastDay - i + 1}</span>
+            </div>`;
         }
 
-        // 현재 달의 날짜들
-        for (let i = 1; i <= lastDayOfMonth.getDate(); i++) {
-            days.push({
-                day: i,
-                isCurrentMonth: true,
-                date: new Date(year, month, i)
-            });
+        // Add current month's days
+        for (let i = 1; i <= daysInMonth; i++) {
+            const date = new Date(year, month, i);
+            const dateString = date.toISOString().split('T')[0];
+            const dayEvents = events.filter(e => e.date === dateString);
+            const todaySchedule = schedule[i];
+
+            let scheduleHtml = '';
+            // PC view: full names
+            scheduleHtml += `<div class="hidden sm:block">
+                                <div class="text-sm ${todaySchedule.kim ? 'text-blue-600' : 'text-gray-400'}">
+                                    ${kimName} ${todaySchedule.kim ? '근무' : '휴무'}
+                                </div>
+                                <div class="text-sm ${todaySchedule.park ? 'text-blue-600' : 'text-gray-400'}">
+                                    ${parkName} ${todaySchedule.park ? '근무' : '휴무'}
+                                </div>
+                            </div>`;
+            // Mobile view: only status
+            scheduleHtml += `<div class="sm:hidden">
+                                <div class="text-sm ${todaySchedule.kim ? 'text-blue-600' : 'text-gray-400'}">
+                                    ${todaySchedule.kim ? '근무' : '휴무'}
+                                </div>
+                                <div class="text-sm ${todaySchedule.park ? 'text-blue-600' : 'text-gray-400'}">
+                                    ${todaySchedule.park ? '근무' : '휴무'}
+                                </div>
+                            </div>`;
+
+            let eventsHtml = dayEvents.map(event => `
+                <div
+                    data-event-id="${event.id}"
+                    class="relative bg-indigo-500 text-white text-xs px-2 py-1 rounded-md cursor-pointer transition-all hover:bg-indigo-600 group"
+                    onclick="handleEditClick(event)"
+                >
+                    <div class="truncate">${event.title}</div>
+                    <div class="absolute top-0 right-0 p-1 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button class="bg-indigo-700 p-1 rounded-full hover:bg-indigo-800 transition-colors" onclick="handleEditClick(event)">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-3 h-3">
+                                <path d="M21.731 2.269a2.625 2.625 0 0 0-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 0 0 0-3.712ZM19.513 8.199l-3.712-3.712L8 16.325V19.25h2.925l11.03-11.03-2.912-2.912Z" />
+                            </svg>
+                        </button>
+                        <button class="bg-red-500 p-1 rounded-full hover:bg-red-600 transition-colors" onclick="handleDeleteClick(event)">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-3 h-3">
+                                <path fill-rule="evenodd" d="M16.5 4.478a.75.75 0 0 0-1.06-.011L9 9.497 5.758 6.255a.75.75 0 0 0-1.06 1.06L7.938 10.5l-3.24 3.24a.75.75 0 1 0 1.06 1.06L9 11.56l3.24 3.24a.75.75 0 0 0 1.06-1.06L10.06 10.5l3.24-3.24a.75.75 0 0 0-.01-1.05Z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+
+            dayCellsHtml += `
+                <div class="calendar-day-cell p-1 rounded-lg bg-white transition-colors flex flex-col overflow-y-auto" onclick="openModal('${dateString}')">
+                    <span class="day-label text-sm font-semibold rounded-full w-8 h-8 flex items-center justify-center">${i}</span>
+                    <div class="mt-1 space-y-1">
+                        ${scheduleHtml}
+                        ${eventsHtml}
+                    </div>
+                </div>
+            `;
         }
 
-        // 다음 달의 첫 날짜들
-        const totalCells = 42; // 6주
-        const remainingCells = totalCells - days.length;
+        // Add padding for next month's days
+        const remainingCells = 42 - (firstDayOfWeek + daysInMonth);
         for (let i = 1; i <= remainingCells; i++) {
-            days.push({
-                day: i,
-                isCurrentMonth: false,
-                date: new Date(year, month + 1, i)
-            });
+            dayCellsHtml += `<div class="calendar-day-cell p-1 rounded-lg bg-gray-50 text-gray-400">
+                <span class="day-label text-sm font-semibold rounded-full w-8 h-8 flex items-center justify-center">${i}</span>
+            </div>`;
         }
 
-        return days;
+        calendarGrid.innerHTML = dayCellsHtml;
     };
 
-    const handlePrevMonth = () => {
-        setCurrentDate(prevDate => new Date(prevDate.getFullYear(), prevDate.getMonth() - 1, 1));
-    };
+    // Modal and event handling functions
+    function openModal(dateString, eventData = null) {
+        modal.classList.remove('hidden');
+        eventTitleInput.value = eventData ? eventData.title : '';
+        eventDescriptionTextarea.value = eventData ? eventData.description : '';
+        modalDateText.textContent = new Date(dateString).toLocaleDateString();
+        modalTitleText.textContent = eventData ? '이벤트 수정' : '새 이벤트 추가';
+        modal.dataset.dateString = dateString;
+        editingEventId = eventData ? eventData.id : null;
+    }
 
-    const handleNextMonth = () => {
-        setCurrentDate(prevDate => new Date(prevDate.getFullYear(), prevDate.getMonth() + 1, 1));
-    };
+    function closeModal() {
+        modal.classList.add('hidden');
+        eventTitleInput.value = '';
+        eventDescriptionTextarea.value = '';
+        editingEventId = null;
+    }
 
-    const handleDayClick = (dateInfo) => {
-        setSelectedDate(dateInfo.date);
-        setEditingEvent(null);
-        setModalTitle('');
-        setModalDescription('');
-        setIsModalOpen(true);
-    };
+    async function handleSave() {
+        const title = eventTitleInput.value.trim();
+        const date = modal.dataset.dateString;
+        if (!title || !date) return;
 
-    const handleEditEvent = (event) => {
-        setEditingEvent(event);
-        setSelectedDate(new Date(event.date));
-        setModalTitle(event.title);
-        setModalDescription(event.description);
-        setIsModalOpen(true);
-    };
+        const eventData = {
+            title: title,
+            description: eventDescriptionTextarea.value,
+            date: date
+        };
 
-    const handleDeleteEvent = async (eventId) => {
-        if (!userId || !db) return;
-        const eventRef = doc(db, 'artifacts', typeof __app_id !== 'undefined' ? __app_id : 'default-app-id', 'users', userId, 'events', eventId);
+        try {
+            const eventsCollection = collection(db, 'artifacts', appId, 'users', userId, 'events');
+            if (editingEventId) {
+                const eventRef = doc(eventsCollection, editingEventId);
+                await setDoc(eventRef, eventData);
+            } else {
+                await setDoc(doc(eventsCollection), eventData);
+            }
+            closeModal();
+        } catch (e) {
+            console.error("이벤트 저장 오류:", e);
+        }
+    }
+
+    function handleEditClick(event) {
+        event.stopPropagation();
+        const eventId = event.currentTarget.dataset.eventId;
+        const eventData = events.find(e => e.id === eventId);
+        if (eventData) {
+            openModal(eventData.date, eventData);
+        }
+    }
+
+    async function handleDeleteClick(event) {
+        event.stopPropagation();
+        const eventId = event.currentTarget.closest('[data-event-id]').dataset.eventId;
+        if (!eventId || !userId) return;
+        const eventRef = doc(db, 'artifacts', appId, 'users', userId, 'events', eventId);
         try {
             await deleteDoc(eventRef);
         } catch (e) {
             console.error("이벤트 삭제 오류:", e);
         }
+    }
+
+    // Attach global listeners
+    prevMonthBtn.addEventListener('click', () => {
+        currentDate.setMonth(currentDate.getMonth() - 1);
+        renderCalendar();
+    });
+
+    nextMonthBtn.addEventListener('click', () => {
+        currentDate.setMonth(currentDate.getMonth() + 1);
+        renderCalendar();
+    });
+
+    closeModalBtn.addEventListener('click', closeModal);
+    cancelButton.addEventListener('click', closeModal);
+    saveButton.addEventListener('click', handleSave);
+
+    // Initial render
+    window.onload = function() {
+        setupFirebase();
     };
+    
+</script>
 
-    const handleModalSubmit = async () => {
-        if (!modalTitle.trim() || !selectedDate || !userId || !db) return;
-
-        const eventData = {
-            title: modalTitle,
-            description: modalDescription,
-            date: selectedDate.toISOString().split('T')[0]
-        };
-
-        try {
-            const eventsCollection = collection(db, 'artifacts', typeof __app_id !== 'undefined' ? __app_id : 'default-app-id', 'users', userId, 'events');
-            if (editingEvent) {
-                const eventRef = doc(eventsCollection, editingEvent.id);
-                await setDoc(eventRef, eventData);
-            } else {
-                await setDoc(doc(eventsCollection), eventData);
-            }
-        } catch (e) {
-            console.error("이벤트 저장 오류:", e);
-        }
-
-        setIsModalOpen(false);
-        setModalTitle('');
-        setModalDescription('');
-        setSelectedDate(null);
-        setEditingEvent(null);
-    };
-
-    const getEventsForDate = (date) => {
-        const dateString = date.toISOString().split('T')[0];
-        return events.filter(event => event.date === dateString);
-    };
-
-    const days = getDaysInMonth(currentDate);
-
-    return (
-        <div className="flex justify-center items-center min-h-screen bg-gray-100 p-4 font-inter text-gray-800">
-            <div className="w-full max-w-4xl p-6 bg-white shadow-xl rounded-2xl">
-                {/* 헤더 */}
-                <div className="flex justify-between items-center mb-6">
-                    <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-200 transition-colors">
-                        <ChevronLeftIcon className="h-6 w-6 text-gray-500" />
-                    </button>
-                    <h2 className="text-2xl font-semibold text-center">
-                        {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월
-                    </h2>
-                    <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-200 transition-colors">
-                        <ChevronRightIcon className="h-6 w-6 text-gray-500" />
-                    </button>
-                </div>
-                {/* 요일 */}
-                <div className="grid grid-cols-7 text-center font-medium text-sm text-gray-500 mb-2">
-                    {weekDays.map(day => (
-                        <div key={day}>{day}</div>
-                    ))}
-                </div>
-                {/* 달력 그리드 */}
-                <div className="grid grid-cols-7 gap-1">
-                    {days.map((dayInfo, index) => (
-                        <div
-                            key={index}
-                            className={`calendar-day-cell h-28 p-1 rounded-lg transition-colors flex flex-col overflow-y-auto ${
-                                dayInfo.isCurrentMonth ? 'bg-white' : 'bg-gray-50 text-gray-400'
-                            } `}
-                            onClick={() => dayInfo.isCurrentMonth && handleDayClick(dayInfo)}
-                            style={{ minHeight: '112px' }}
-                        >
-                            <span className={`day-label text-sm font-semibold rounded-full w-8 h-8 flex items-center justify-center`}>
-                                {dayInfo.day}
-                            </span>
-                            <div className="mt-1 space-y-1">
-                                {getEventsForDate(dayInfo.date).map(event => (
-                                    <div
-                                        key={event.id}
-                                        className="relative bg-indigo-500 text-white text-xs px-2 py-1 rounded-md cursor-pointer transition-all hover:bg-indigo-600 group"
-                                        onClick={(e) => {
-                                            e.stopPropagation(); // 부모 클릭 방지
-                                            handleEditEvent(event);
-                                        }}
-                                    >
-                                        <div className="truncate">{event.title}</div>
-                                        <div className="absolute top-0 right-0 p-1 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleEditEvent(event);
-                                            }} className="bg-indigo-700 p-1 rounded-full hover:bg-indigo-800 transition-colors">
-                                                <PencilIcon className="w-3 h-3 text-white" />
-                                            </button>
-                                            <button onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDeleteEvent(event.id);
-                                            }} className="bg-red-500 p-1 rounded-full hover:bg-red-600 transition-colors">
-                                                <TrashIcon className="w-3 h-3 text-white" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-            {/* 모달 */}
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay">
-                    <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl transition-transform-scale">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xl font-bold">{editingEvent ? '이벤트 수정' : '새 이벤트 추가'}</h3>
-                            <button onClick={() => setIsModalOpen(false)} className="p-1 rounded-full hover:bg-gray-200 transition-colors">
-                                <XCircleIcon className="h-6 w-6 text-gray-500" />
-                            </button>
-                        </div>
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700">날짜</label>
-                            <p className="mt-1 p-2 bg-gray-100 rounded-md">{selectedDate.toLocaleDateString()}</p>
-                        </div>
-                        <div className="mb-4">
-                            <label htmlFor="title" className="block text-sm font-medium text-gray-700">제목</label>
-                            <input
-                                type="text"
-                                id="title"
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                value={modalTitle}
-                                onChange={(e) => setModalTitle(e.target.value)}
-                            />
-                        </div>
-                        <div className="mb-4">
-                            <label htmlFor="description" className="block text-sm font-medium text-gray-700">설명 (선택 사항)</label>
-                            <textarea
-                                id="description"
-                                rows="3"
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                value={modalDescription}
-                                onChange={(e) => setModalDescription(e.target.value)}
-                            ></textarea>
-                        </div>
-                        <div className="flex justify-end space-x-3">
-                            <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-full text-sm font-semibold bg-gray-200 hover:bg-gray-300 transition-colors">
-                                취소
-                            </button>
-                            <button
-                                onClick={handleModalSubmit}
-                                className="px-4 py-2 rounded-full text-sm font-semibold text-white bg-indigo-500 hover:bg-indigo-600 transition-colors flex items-center space-x-1"
-                            >
-                                <CheckCircleIcon className="h-4 w-4" />
-                                <span>저장</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-export default App;
+</body>
+</html>
