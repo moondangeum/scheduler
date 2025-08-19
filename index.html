@@ -306,8 +306,8 @@
             
             /**
              * 근무 일수를 정확히 16일에 맞추기 위한 '전원 근무일'을 제안합니다.
-             * 이때, 전원 근무일 사이에는 최소 2일의 휴무일을 보장합니다.
-             * 또한, 원래의 3일 휴무 패턴을 깨지 않도록 제안합니다.
+             * 이때, 3일 연속 휴무 중간을 끊지 않도록 제안합니다.
+             * 또한, 전원 근무일 사이에는 최소 2일의 휴무일을 보장합니다.
              */
             const suggestDoubleDutyDays = () => {
                 if (!startDate) {
@@ -315,34 +315,32 @@
                     return;
                 }
                 
+                const start = new Date(startDate);
+                const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+                const availableDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
                 // 필수 휴무일 및 기존 전원 근무일 세트 생성
                 const kimRestDays = new Set(kimMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const parkRestDays = new Set(parkMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const currentDoubleDutySet = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 
+                // 순수 3on-3off 패턴의 스케줄을 미리 계산합니다.
+                const rawSchedule = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, '', '', '').schedule;
+                
                 // 전원 근무일을 제외한 기본 근무 일수 계산
                 const { kimDays: baseKimDays, parkDays: baseParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, '');
-
-                // 현재 전원 근무일을 포함한 근무 일수
-                const currentKimDays = baseKimDays + currentDoubleDutySet.size;
-                const currentParkDays = baseParkDays + currentDoubleDutySet.size;
-
-                const start = new Date(startDate);
-                const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
-                const availableDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
                 const suggestions = [];
 
                 // 이미 16일인 경우
+                const currentKimDays = baseKimDays + currentDoubleDutySet.size;
+                const currentParkDays = baseParkDays + currentDoubleDutySet.size;
                 if (currentKimDays === 16 && currentParkDays === 16) {
                     showToast('근무일수가 이미 16/16으로 맞춰져 있습니다.', false);
                     setSuggestedDays([]);
                     return;
                 }
                 
-                // 순수 3on-3off 패턴의 스케줄을 미리 계산합니다.
-                const rawSchedule = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, '', '', '').schedule;
-
                 // 단일 날짜 추가로 16일이 되는 경우 탐색
                 for (const day of availableDays) {
                     const dayIndex = day - 1;
@@ -354,13 +352,16 @@
                     
                     // 전원 근무일이 3일 휴무 사이를 깨는지 확인합니다.
                     // 원래 패턴에서 해당 날짜가 특정인의 연속 3일 휴무의 두 번째 날인지 확인합니다.
-                    const isBreakingKimRest = rawSchedule[dayIndex].kim === '휴무' &&
-                                              (dayIndex > 0 && rawSchedule[dayIndex - 1].kim === '휴무') &&
-                                              (dayIndex < daysInMonth - 1 && rawSchedule[dayIndex + 1].kim === '휴무');
+                    // day-1, day, day+1 모두 휴무일인 경우
+                    const isBreakingKimRest = dayIndex > 0 && dayIndex < daysInMonth - 1 &&
+                                              rawSchedule[dayIndex - 1].kim === '휴무' &&
+                                              rawSchedule[dayIndex].kim === '휴무' &&
+                                              rawSchedule[dayIndex + 1].kim === '휴무';
                     
-                    const isBreakingParkRest = rawSchedule[dayIndex].park === '휴무' &&
-                                               (dayIndex > 0 && rawSchedule[dayIndex - 1].park === '휴무') &&
-                                               (dayIndex < daysInMonth - 1 && rawSchedule[dayIndex + 1].park === '휴무');
+                    const isBreakingParkRest = dayIndex > 0 && dayIndex < daysInMonth - 1 &&
+                                               rawSchedule[dayIndex - 1].park === '휴무' &&
+                                               rawSchedule[dayIndex].park === '휴무' &&
+                                               rawSchedule[dayIndex + 1].park === '휴무';
 
                     if (isBreakingKimRest || isBreakingParkRest) {
                         continue;
@@ -395,19 +396,23 @@
                             }
                             
                             // 전원 근무일이 3일 휴무 사이를 깨는지 확인
-                            const isBreakingKimRest1 = rawSchedule[day1Index].kim === '휴무' &&
-                                                       (day1Index > 0 && rawSchedule[day1Index - 1].kim === '휴무') &&
-                                                       (day1Index < daysInMonth - 1 && rawSchedule[day1Index + 1].kim === '휴무');
-                            const isBreakingParkRest1 = rawSchedule[day1Index].park === '휴무' &&
-                                                        (day1Index > 0 && rawSchedule[day1Index - 1].park === '휴무') &&
-                                                        (day1Index < daysInMonth - 1 && rawSchedule[day1Index + 1].park === '휴무');
+                            const isBreakingKimRest1 = day1Index > 0 && day1Index < daysInMonth - 1 &&
+                                                       rawSchedule[day1Index - 1].kim === '휴무' &&
+                                                       rawSchedule[day1Index].kim === '휴무' &&
+                                                       rawSchedule[day1Index + 1].kim === '휴무';
+                            const isBreakingParkRest1 = day1Index > 0 && day1Index < daysInMonth - 1 &&
+                                                        rawSchedule[day1Index - 1].park === '휴무' &&
+                                                        rawSchedule[day1Index].park === '휴무' &&
+                                                        rawSchedule[day1Index + 1].park === '휴무';
 
-                            const isBreakingKimRest2 = rawSchedule[day2Index].kim === '휴무' &&
-                                                       (day2Index > 0 && rawSchedule[day2Index - 1].kim === '휴무') &&
-                                                       (day2Index < daysInMonth - 1 && rawSchedule[day2Index + 1].kim === '휴무');
-                            const isBreakingParkRest2 = rawSchedule[day2Index].park === '휴무' &&
-                                                        (day2Index > 0 && rawSchedule[day2Index - 1].park === '휴무') &&
-                                                        (day2Index < daysInMonth - 1 && rawSchedule[day2Index + 1].park === '휴무');
+                            const isBreakingKimRest2 = day2Index > 0 && day2Index < daysInMonth - 1 &&
+                                                       rawSchedule[day2Index - 1].kim === '휴무' &&
+                                                       rawSchedule[day2Index].kim === '휴무' &&
+                                                       rawSchedule[day2Index + 1].kim === '휴무';
+                            const isBreakingParkRest2 = day2Index > 0 && day2Index < daysInMonth - 1 &&
+                                                        rawSchedule[day2Index - 1].park === '휴무' &&
+                                                        rawSchedule[day2Index].park === '휴무' &&
+                                                        rawSchedule[day2Index + 1].park === '휴무';
                             
                             if (isBreakingKimRest1 || isBreakingParkRest1 || isBreakingKimRest2 || isBreakingParkRest2) {
                                 continue;
@@ -423,7 +428,7 @@
                             }
                             
                             const tempDoubleDutySet = new Set([...currentDoubleDutySet, day1, day2]);
-                            const { kimDays: tempKimDays, parkDays: tempParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, Array.from(tempDoubleDutySet).join(','));
+                            const { kimDays: tempKimDays, tempParkDays: tempParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, Array.from(tempDoubleDutySet).join(','));
                             
                             if (tempKimDays === 16 && tempParkDays === 16) {
                                 suggestions.push({ days: [day1, day2], kim: tempKimDays, park: tempParkDays });
