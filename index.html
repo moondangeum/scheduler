@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>2인 교대 야간 근무표</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23e0e7ff' stroke='%233b82f6' stroke-width='8'/%3E%3Cline x1='50' y1='25' x2='50' y2='50' stroke='%233b82f6' stroke-width='6' stroke-linecap='round'/%3E%3Cline x1='50' y1='50' x2='75' y2='50' stroke='%233b82f6' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M 50 50 L 50 10 A 40 40 0 0 1 78.26 21.74 Z' fill='none' stroke='none'/%3E%3C/svg%3E" type="image/svg+xml">
     <!-- Tailwind CSS CDN을 로드합니다. -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React 및 ReactDOM CDN을 로드하여 React 앱을 브라우저에서 직접 실행합니다. -->
@@ -218,8 +217,7 @@
                 try {
                     const docRef = doc(db, `artifacts/${appId}/public/data/schedules`, 'mainSchedule');
                     await setDoc(docRef, scheduleSettings);
-                    // 사용자 요청에 따라 저장 시에만 alert() 사용
-                    alert('근무표 설정이 클라우드에 성공적으로 저장되었습니다!');
+                    showToast('근무표 설정이 클라우드에 성공적으로 저장되었습니다!');
                 } catch (e) {
                     console.error("Error saving document: ", e);
                     showToast('근무표 저장에 실패했습니다. (콘솔 로그 확인)', true);
@@ -523,28 +521,29 @@
                 
                 const calendarDays = [...prevMonthDays, ...scheduleData.slice(0, daysInMonth)];
                 
-                const calendarContainerClass = `bg-white rounded-xl p-4 shadow-md`;
+                // PC에서는 고정 너비, 모바일에서는 100% 너비
+                const calendarContainerClass = `bg-white rounded-xl p-4 shadow-md max-w-2xl mx-auto md:max-w-4xl lg:max-w-5xl xl:max-w-7xl`;
                 
                 return (
                     <div className={calendarContainerClass} ref={calendarRef}>
-                        <div className="text-center text-xl font-bold mb-4 text-gray-800">
+                        <div className="text-center text-2xl font-bold mb-4 text-gray-800">
                             {start.getFullYear()}년 {start.getMonth() + 1}월
                         </div>
                         <div className="flex justify-around items-center bg-gray-100 p-2 rounded-lg mb-4 shadow-inner">
                             <button
-                                onClick={() => setHighlightedPerson(highlightedPerson === 'kim' ? null : 'kim')}
+                                onClick={() => setHighlightedPerson(h => h === 'kim' ? null : 'kim')}
                                 className={`flex-1 flex flex-col items-center p-2 rounded-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-300 transform hover:scale-105 ${highlightedPerson === 'kim' ? 'bg-blue-100 ring-2 ring-blue-500' : 'bg-white'}`}
                             >
-                                <div className="font-bold text-lg text-blue-600 truncate">{kimName}</div>
-                                <div className="text-2xl font-extrabold">{kimWorkDays}일</div>
+                                <div className="font-bold text-base md:text-lg text-blue-600 truncate">{kimName}</div>
+                                <div className="text-xl md:text-2xl font-extrabold">{kimWorkDays}일</div>
                             </button>
                             <div className="h-16 w-px bg-gray-300 mx-4"></div>
                             <button
-                                onClick={() => setHighlightedPerson(highlightedPerson === 'park' ? null : 'park')}
+                                onClick={() => setHighlightedPerson(h => h === 'park' ? null : 'park')}
                                 className={`flex-1 flex flex-col items-center p-2 rounded-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-red-300 transform hover:scale-105 ${highlightedPerson === 'park' ? 'bg-red-100 ring-2 ring-red-500' : 'bg-white'}`}
                             >
-                                <div className="font-bold text-lg text-red-600 truncate">{parkName}</div>
-                                <div className="text-2xl font-extrabold">{parkWorkDays}일</div>
+                                <div className="font-bold text-base md:text-lg text-red-600 truncate">{parkName}</div>
+                                <div className="text-xl md:text-2xl font-extrabold">{parkWorkDays}일</div>
                             </button>
                         </div>
                         <div className="grid grid-cols-7 gap-1 text-center text-xs sm:text-sm font-semibold">
@@ -570,6 +569,19 @@
                                     
                                 const dayCellClass = day.isCurrentMonth ? '' : 'bg-gray-100 text-gray-400';
 
+                                let kimTextClass, parkTextClass;
+
+                                if (highlightedPerson === 'kim') {
+                                    kimTextClass = `text-sm sm:text-base ${day.kim === '근무' ? 'font-bold text-blue-600' : 'font-normal text-blue-400'}`;
+                                    parkTextClass = `text-sm sm:text-base text-gray-400`;
+                                } else if (highlightedPerson === 'park') {
+                                    kimTextClass = `text-sm sm:text-base text-gray-400`;
+                                    parkTextClass = `text-sm sm:text-base ${day.park === '근무' ? 'font-bold text-red-600' : 'font-normal text-red-400'}`;
+                                } else {
+                                    kimTextClass = `text-sm sm:text-base ${day.kim === '근무' ? 'font-normal text-blue-600' : 'font-normal text-blue-400'}`;
+                                    parkTextClass = `text-sm sm:text-base ${day.park === '근무' ? 'font-normal text-red-600' : 'font-normal text-red-400'}`;
+                                }
+
                                 return (
                                     <div 
                                         key={index} 
@@ -579,8 +591,8 @@
                                         {day.isCurrentMonth ? (
                                             <>
                                                 <div className="text-gray-900 font-bold mb-1">{day.date}</div>
-                                                <div className={`text-xs ${day.kim === '근무' ? 'text-blue-600 font-bold' : 'text-gray-400'}`}>{day.kim === '근무' ? `근무` : `휴무`}</div>
-                                                <div className={`text-xs ${day.park === '근무' ? 'text-red-600 font-bold' : 'text-gray-400'}`}>{day.park === '근무' ? `근무` : `휴무`}</div>
+                                                <div className={kimTextClass}>{day.kim === '근무' ? `근무` : `휴무`}</div>
+                                                <div className={parkTextClass}>{day.park === '근무' ? `근무` : `휴무`}</div>
                                             </>
                                         ) : (
                                             <div className="w-full h-full"></div>
@@ -735,4 +747,3 @@
     </script>
 </body>
 </html>
-
