@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2인 교대 야간 근무표</title>
+    <!-- Tailwind CSS CDN을 로드합니다. -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React 및 ReactDOM CDN을 로드하여 React 앱을 브라우저에서 직접 실행합니다. -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel을 로드하여 JSX 문법을 변환합니다. -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans antialiased">
+    <!-- React 앱이 렌더링될 루트 요소 -->
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // 이 React 웹 앱은 2인 교대 야간 근무표를 생성하고 관리합니다.
+        // 3일 근무, 3일 휴무의 고정 패턴을 기반으로 하며, 달력과 표 형태로 볼 수 있습니다.
+        // 관리자 모드(/admin)와 근무자 모드로 나뉘며, 관리자만 설정을 변경할 수 있습니다.
+        //
+        // 주요 기능:
+        // - 시작 날짜, 전월 마지막 근무자, 이름 등을 설정하여 근무표 생성
+        // - 근무일수(16일)를 맞추기 위한 '전원 근무일' 추천 기능
+        // - 달력에서 날짜를 클릭하여 근무자 교대
+        //
+        // 이 앱은 Tailwind CSS를 사용하여 반응형 UI를 구현했습니다.
+
+        const { useState, useEffect } = React;
+
+        const App = () => {
+            // URL 경로를 확인하여 관리자 모드인지 여부를 판단합니다.
+            const isManagerView = window.location.pathname.endsWith('/admin');
+            const isEmployeeView = !isManagerView;
+
+            // 뷰 상태 ('table' 또는 'calendar')를 관리합니다.
+            const [view, setView] = useState(isManagerView ? 'table' : 'calendar');
+            // 시작 날짜를 관리합니다.
+            const [startDate, setStartDate] = useState(() => {
+                // 근무자 모드인 경우, 오늘 날짜를 기본값으로 설정합니다.
+                const today = new Date();
+                return today.toISOString().split('T')[0];
+            });
+            // 생성된 근무표 데이터를 저장합니다.
+            const [scheduleData, setScheduleData] = useState([]);
+            // 메시지 박스 메시지를 관리합니다.
+            const [message, setMessage] = useState('');
+            // 메시지 박스의 에러 상태를 관리합니다.
+            const [isError, setIsError] = useState(false);
+            // 각 근무자의 근무일수를 저장합니다.
+            const [kimWorkDays, setKimWorkDays] = useState(0);
+            // 각 근무자의 근무일수를 저장합니다.
+            const [parkWorkDays, setParkWorkDays] = useState(0);
+            // 하이라이트할 근무자를 저장합니다. ('kim', 'park' 또는 null)
+            const [highlightedPerson, setHighlightedPerson] = useState(null);
+            // 근무자 1의 필수 휴무일 (콤마로 구분된 문자열)
+            const [kimMandatoryRest, setKimMandatoryRest] = useState('');
+            // 근무자 2의 필수 휴무일 (콤마로 구분된 문자열)
+            const [parkMandatoryRest, setParkMandatoryRest] = useState('');
+            // 두 명 모두 출근하는 날짜 (콤마로 구분된 문자열)
+            const [doubleDutyDays, setDoubleDutyDays] = useState('');
+            // 전월 마지막 근무자 ('kim' 또는 'park')
+            const [lastMonthLastPerson, setLastMonthLastPerson] = useState('kim');
+            // 전월 마지막 연속 근무일수 (1~4)
+            const [lastMonthConsecutiveDays, setLastMonthConsecutiveDays] = useState(1);
+            // 추천된 전원 근무일 목록을 저장합니다.
+            const [suggestedDays, setSuggestedDays] = useState([]);
+            // 근무자 1과 근무자 2의 이름을 변경할 수 있는 상태를 추가했습니다.
+            const [kimName, setKimName] = useState('김철수');
+            const [parkName, setParkName] = useState('박영희');
+            
+            // 주간 요일 배열 (한글)
+            const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+            /**
+             * 지정된 날짜의 요일을 반환합니다.
+             * @param {Date} date - 날짜 객체
+             * @returns {string} 요일 (예: '월')
+             */
+            const getWeekday = (date) => WEEKDAYS[date.getDay()];
+
+            /**
+             * 메시지 박스를 표시합니다.
+             * @param {string} msg - 표시할 메시지
+             * @param {boolean} error - 에러 메시지 여부 (색상 변경)
+             */
+            const showMessage = (msg, error = false) => {
+                // 근무자 모드에서는 메시지 박스를 표시하지 않습니다.
+                if (isEmployeeView) return;
+                setMessage(msg);
+                setIsError(error);
+                setTimeout(() => {
+                    setMessage('');
+                }, 3000); // 3초 후 사라짐
+            };
+
+            /**
+             * '3일 근무 3일 휴무' 패턴으로 근무표를 생성합니다.
+             * 전월 마지막 근무자와 연속 근무일수를 고려하여 시작점을 조정합니다.
+             *
+             * @param {string} startDateStr - 시작 날짜 (YYYY-MM-DD 형식)
+             * @param {string} lastPerson - 전월 마지막 근무자 ('kim' 또는 'park')
+             * @param {number} lastDays - 전월 마지막 연속 근무일수
+             * @param {string} kimRest - 근무자 1 필수 휴무일 (콤마로 구분)
+             * @param {string} parkRest - 근무자 2 필수 휴무일 (콤마로 구분)
+             * @param {string} bothWork - 전원 근무일 (콤마로 구분)
+             * @returns {{schedule: Array, kimDays: number, parkDays: number}} 계산된 근무표와 근무일수
+             */
+            const calculateThreeOnThreeOffSchedule = (startDateStr, lastPerson, lastDays, kimRest, parkRest, bothWork) => {
+                const start = new Date(startDateStr);
+                const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+                const data = [];
+
+                const kimRestDays = new Set(kimRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+                const parkRestDays = new Set(parkRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+                const bothWorkDays = new Set(bothWork.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+
+                let kimWorkCount = 0;
+                let parkWorkCount = 0;
+                
+                let cycleIndex = 0;
+                if (lastPerson === 'kim') {
+                    cycleIndex = lastDays;
+                } else {
+                    cycleIndex = lastDays + 3;
+                }
+                
+                for (let i = 0; i < daysInMonth; i++) {
+                    const currentDate = new Date(start);
+                    currentDate.setDate(start.getDate() + i);
+                    const day = currentDate.getDate();
+                    const weekday = getWeekday(currentDate);
+
+                    let kimWorks = (cycleIndex % 6) < 3;
+                    let parkWorks = (cycleIndex % 6) >= 3;
+                    
+                    if (bothWorkDays.has(day)) {
+                        kimWorks = true;
+                        parkWorks = true;
+                    } else if (kimRestDays.has(day)) {
+                        kimWorks = false;
+                        parkWorks = true;
+                    } else if (parkRestDays.has(day)) {
+                        kimWorks = true;
+                        parkWorks = false;
+                    }
+
+                    if (kimWorks) kimWorkCount++;
+                    if (parkWorks) parkWorkCount++;
+
+                    data.push({
+                        date: day,
+                        weekday: weekday,
+                        kim: kimWorks ? '근무' : '휴무',
+                        park: parkWorks ? '근무' : '휴무',
+                        isCurrentMonth: true
+                    });
+                    
+                    cycleIndex = (cycleIndex + 1) % 6;
+                }
+                
+                return { schedule: data, kimDays: kimWorkCount, parkDays: parkWorkCount };
+            };
+
+            /**
+             * 근무표 데이터를 생성합니다.
+             */
+            const generateSchedule = () => {
+                if (!startDate) {
+                    showMessage('시작 날짜를 선택해주세요.', true);
+                    return;
+                }
+                
+                const { schedule, kimDays, parkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, doubleDutyDays);
+                
+                setScheduleData(schedule);
+                setKimWorkDays(kimDays);
+                setParkWorkDays(parkDays);
+                showMessage('근무표가 생성되었습니다. 달력에서 날짜를 클릭하여 근무를 교대할 수 있습니다.');
+            };
+            
+            /**
+             * 근무 일수를 정확히 16일에 맞추기 위한 '전원 근무일'을 제안합니다.
+             */
+            const suggestDoubleDutyDays = () => {
+                if (!startDate) {
+                    showMessage('시작 날짜를 먼저 선택해주세요.', true);
+                    return;
+                }
+                
+                const kimRestDays = new Set(kimMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+                const parkRestDays = new Set(parkMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+                const currentDoubleDutySet = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+                
+                // 전원 근무일이 없는 '순수' 근무표를 계산하여 기준을 잡습니다.
+                const { kimDays: baseKimDays, parkDays: baseParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, '');
+
+                const start = new Date(startDate);
+                const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+                const availableDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+                const suggestions = [];
+
+                // 이미 16일 근무이거나 16일 초과인 경우
+                if (baseKimDays === 16 && baseParkDays === 16) {
+                    showMessage('근무일수가 이미 16/16으로 맞춰져 있습니다.', false);
+                    setSuggestedDays([]);
+                    return;
+                }
+
+                // 제안 목록 초기화
+                setSuggestedDays([]);
+
+                // 1. 단일 전원 근무일로 16/16이 되는 경우를 찾습니다.
+                for (const day of availableDays) {
+                    // 필수 휴무일이거나 이미 전원 근무일인 날짜는 건너뜁니다.
+                    if (kimRestDays.has(day) || parkRestDays.has(day) || currentDoubleDutySet.has(day)) continue; 
+                    
+                    const tempDoubleDutyDays = [...currentDoubleDutySet, day].join(',');
+                    const { kimDays, parkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, tempDoubleDutyDays);
+                    if (kimDays === 16 && parkDays === 16) {
+                        suggestions.push({ days: [day], kim: kimDays, park: parkDays });
+                    }
+                }
+                
+                // 2. 단일 전원 근무일로 해결되지 않으면, 두 날짜 조합을 찾습니다.
+                if (suggestions.length === 0) {
+                    for (let i = 0; i < availableDays.length; i++) {
+                        for (let j = i + 1; j < availableDays.length; j++) {
+                            const day1 = availableDays[i];
+                            const day2 = availableDays[j];
+                            
+                            // 필수 휴무일이거나 이미 전원 근무일인 날짜는 건너뜁니다.
+                            if (kimRestDays.has(day1) || kimRestDays.has(day2) || parkRestDays.has(day1) || parkRestDays.has(day2) || currentDoubleDutySet.has(day1) || currentDoubleDutySet.has(day2)) continue;
+
+                            const tempDoubleDutyDays = [...currentDoubleDutySet, day1, day2].join(',');
+                            const { kimDays, parkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, tempDoubleDutyDays);
+                            if (kimDays === 16 && parkDays === 16) {
+                                suggestions.push({ days: [day1, day2], kim: kimDays, park: parkDays });
+                            }
+                        }
+                    }
+                }
+
+                if (suggestions.length > 0) {
+                    setSuggestedDays(suggestions);
+                    showMessage('근무일수를 16일에 맞출 수 있는 날짜 조합을 선택하세요.');
+                } else {
+                    setSuggestedDays([]);
+                    showMessage('현재 근무표에서는 근무일수 16/16을 맞출 수 있는 방법이 없습니다.', false);
+                }
+            };
+            
+            /**
+             * 추천된 전원 근무일 버튼을 클릭했을 때 호출됩니다.
+             * 선택된 날짜들을 `doubleDutyDays`에 추가하고 근무표를 새로 생성합니다.
+             * @param {Array<number>} days - 선택된 날짜 배열
+             */
+            const handleAddSuggestedDay = (days) => {
+                const newDoubleDutyDays = doubleDutyDays ? `${doubleDutyDays},${days.join(',')}` : `${days.join(',')}`;
+                setDoubleDutyDays(newDoubleDutyDays);
+                setSuggestedDays([]); // 제안 버튼 목록 숨기기
+                
+                // 새로운 전원 근무일을 포함하여 근무표 재생성
+                const { schedule, kimDays, parkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, newDoubleDutyDays);
+                setScheduleData(schedule);
+                setKimWorkDays(kimDays);
+                setParkWorkDays(parkDays);
+                showMessage(`${days.join(', ')}일을 전원 근무일로 지정했습니다.`);
+            };
+            
+            /**
+             * 달력에서 날짜를 클릭하여 근무를 교대하는 함수입니다.
+             * @param {number} index - 클릭된 날짜의 인덱스
+             */
+            const handleShiftSwap = (index) => {
+                if (scheduleData.length === 0) return;
+                // 근무자 모드에서는 교대 기능을 비활성화합니다.
+                if (isEmployeeView) {
+                    showMessage('근무자 모드에서는 근무를 변경할 수 없습니다.', true);
+                    return;
+                }
+
+                const newSchedule = [...scheduleData];
+                const dayToSwap = newSchedule[index];
+                
+                if (!dayToSwap.isCurrentMonth) {
+                    showMessage('이전 달의 근무는 변경할 수 없습니다.', true);
+                    return;
+                }
+                
+                // 전원 근무일이거나 필수 휴무일인 경우 교대 불가능
+                const day = dayToSwap.date;
+                const kimRestDays = new Set(kimMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+                const parkRestDays = new Set(parkMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+                const bothWorkDays = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+
+                if (bothWorkDays.has(day) || kimRestDays.has(day) || parkRestDays.has(day)) {
+                    showMessage('이 날짜는 근무/휴무 지정이 되어 있어 교대할 수 없습니다.', true);
+                    return;
+                }
+
+                const newKimStatus = dayToSwap.park;
+                const newParkStatus = dayToSwap.kim;
+                dayToSwap.kim = newKimStatus;
+                dayToSwap.park = newParkStatus;
+                
+                setScheduleData(newSchedule);
+                showMessage(`${dayToSwap.date}일의 근무가 교대되었습니다.`);
+            };
+            
+            // scheduleData가 변경될 때마다 근무일수를 다시 계산합니다.
+            useEffect(() => {
+                let kimCount = 0;
+                let parkCount = 0;
+                scheduleData.forEach(day => {
+                    if (day.kim === '근무') kimCount++;
+                    if (day.park === '근무') parkCount++;
+                });
+                setKimWorkDays(kimCount);
+                setParkWorkDays(parkCount);
+            }, [scheduleData]);
+
+            // 컴포넌트가 처음 렌더링될 때 근무자 모드인 경우 근무표를 생성합니다.
+            useEffect(() => {
+                if (isEmployeeView) {
+                    generateSchedule();
+                }
+            }, [isEmployeeView]);
+
+            /**
+             * Renders the schedule in a table format.
+             */
+            const renderTable = () => (
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-300 rounded-xl shadow-md overflow-hidden">
+                        <thead className="bg-gray-100">
+                            <tr>
+                                <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider rounded-tl-xl">날짜</th>
+                                <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">요일</th>
+                                <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">{kimName}</th>
+                                <th scope="col" className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider rounded-tr-xl">{parkName}</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {scheduleData.map((day, index) => (
+                                <tr key={index} className="hover:bg-gray-50">
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200">{day.date}일</td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 border-r border-gray-200">{day.weekday}</td>
+                                    <td className={`px-3 py-2 whitespace-nowrap text-sm font-semibold ${day.kim === '근무' ? 'text-blue-600' : 'text-red-600'}`}>{day.kim}</td>
+                                    <td className={`px-3 py-2 whitespace-nowrap text-sm font-semibold ${day.park === '근무' ? 'text-blue-600' : 'text-red-600'}`}>{day.park}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+
+            /**
+             * Renders the schedule in a calendar format.
+             */
+            const renderCalendar = () => {
+                if (scheduleData.length === 0) {
+                    return (
+                        <div className="text-center text-gray-500 text-lg py-10">
+                            달력을 보려면 먼저 시작 날짜를 선택하고 근무표를 생성해주세요.
+                        </div>
+                    );
+                }
+
+                const start = new Date(startDate);
+                const firstDayOfMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+                const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+                const startDayOfWeek = firstDayOfMonth.getDay();
+                
+                const prevMonth = new Date(start.getFullYear(), start.getMonth(), 0);
+                const daysInPrevMonth = prevMonth.getDate();
+                const prevMonthDays = [];
+                
+                const startCycleIndex = lastMonthLastPerson === 'kim' ? lastMonthConsecutiveDays : lastMonthConsecutiveDays + 3;
+                for (let i = startDayOfWeek - 1; i >= 0; i--) {
+                    const date = daysInPrevMonth - i;
+                    const cycleIndexForDay = (startCycleIndex - (startDayOfWeek - i) + 60) % 6;
+                    const isKimWorking = cycleIndexForDay < 3;
+                    
+                    prevMonthDays.push({
+                        date: date,
+                        weekday: getWeekday(new Date(prevMonth.getFullYear(), prevMonth.getMonth(), date)),
+                        kim: isKimWorking ? '근무' : '휴무',
+                        park: !isKimWorking ? '근무' : '휴무',
+                        isCurrentMonth: false
+                    });
+                }
+                
+                const calendarDays = [...prevMonthDays, ...scheduleData.slice(0, daysInMonth)];
+                
+                const calendarContainerClass = `bg-white rounded-xl p-4 shadow-md`;
+                
+                return (
+                    <div className={calendarContainerClass}>
+                        <div className="text-center text-xl font-bold mb-4 text-gray-800">
+                            {start.getFullYear()}년 {start.getMonth() + 1}월
+                        </div>
+                        {/* 근무자 모드에서는 하이라이트 버튼을 숨깁니다. */}
+                        {isManagerView && (
+                            <div className="flex justify-around items-center bg-gray-100 p-2 rounded-lg mb-4 shadow-inner">
+                                <button
+                                    onClick={() => setHighlightedPerson(highlightedPerson === 'kim' ? null : 'kim')}
+                                    className={`flex-1 flex flex-col items-center p-4 rounded-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-300 transform hover:scale-105 ${highlightedPerson === 'kim' ? 'bg-blue-100 ring-2 ring-blue-500' : 'bg-white'}`}
+                                >
+                                    <div className="font-bold text-lg text-blue-600">{kimName}</div>
+                                    <div className="text-2xl font-extrabold">{kimWorkDays}일</div>
+                                </button>
+                                <div className="h-16 w-px bg-gray-300 mx-4"></div>
+                                <button
+                                    onClick={() => setHighlightedPerson(highlightedPerson === 'park' ? null : 'park')}
+                                    className={`flex-1 flex flex-col items-center p-4 rounded-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-red-300 transform hover:scale-105 ${highlightedPerson === 'park' ? 'bg-red-100 ring-2 ring-red-500' : 'bg-white'}`}
+                                >
+                                    <div className="font-bold text-lg text-red-600">{parkName}</div>
+                                    <div className="text-2xl font-extrabold">{parkWorkDays}일</div>
+                                </button>
+                            </div>
+                        )}
+                        <div className="grid grid-cols-7 gap-2 text-center text-sm font-semibold">
+                            {WEEKDAYS.map((day, index) => {
+                                let textColorClass = 'text-gray-600';
+                                if (index === 0) {
+                                    textColorClass = 'text-red-600';
+                                } else if (index === 6) {
+                                    textColorClass = 'text-blue-600';
+                                }
+                                return <div key={day} className={textColorClass}>{day}</div>;
+                            })}
+                        </div>
+                        <div className="grid grid-cols-7 gap-2 mt-2">
+                            {calendarDays.map((day, index) => {
+                                const isHighlighted = day && 
+                                                      ((highlightedPerson === 'kim' && day.kim === '근무') || 
+                                                       (highlightedPerson === 'park' && day.park === '근무'));
+                                
+                                const highlightClass = isHighlighted && day.isCurrentMonth
+                                    ? (highlightedPerson === 'kim' ? 'border-4 border-blue-500' : 'border-4 border-red-500')
+                                    : 'border-gray-200';
+                                    
+                                const dayCellClass = day.isCurrentMonth ? '' : 'bg-gray-100 text-gray-400';
+
+                                return (
+                                    <div 
+                                        key={index} 
+                                        onClick={() => day && day.isCurrentMonth && handleShiftSwap(index - prevMonthDays.length)}
+                                        className={`rounded-lg p-2 h-28 flex flex-col items-center justify-start text-sm border shadow-sm transition-all duration-200 ${day.isCurrentMonth && isManagerView ? 'hover:scale-105 hover:shadow-lg cursor-pointer' : ''} ${highlightClass} ${dayCellClass}`}
+                                    >
+                                        {day.isCurrentMonth ? (
+                                            <>
+                                                <div className="text-gray-900 font-bold mb-2">{day.date}</div>
+                                                <div className={`text-xs ${day.kim === '근무' ? 'text-blue-600' : 'text-red-600'}`}>{day.kim === '근무' ? `${kimName} (근무)` : `${kimName} (휴무)`}</div>
+                                                <div className={`text-xs ${day.park === '근무' ? 'text-blue-600' : 'text-red-600'}`}>{day.park === '근무' ? `${parkName} (근무)` : `${parkName} (휴무)`}</div>
+                                            </>
+                                        ) : (
+                                            <div className="w-full h-full"></div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            };
+            
+            // 추천된 전원 근무일 버튼을 렌더링하는 함수
+            const renderSuggestedDays = () => {
+                if (suggestedDays.length === 0) return null;
+
+                return (
+                    <div className="bg-gray-100 p-4 rounded-xl shadow-inner mb-8">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">근무일수 16일 맞추기 제안:</h3>
+                        <div className="flex flex-wrap gap-2">
+                            {suggestedDays.map((suggestion, index) => (
+                                <button
+                                    key={index}
+                                    onClick={() => handleAddSuggestedDay(suggestion.days)}
+                                    className="py-2 px-4 rounded-lg font-semibold shadow-md transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-300 bg-white text-green-600 border border-green-300 hover:bg-green-50 hover:border-green-500"
+                                >
+                                    {suggestion.days.map(d => `${d}일`).join(', ')} ({suggestion.kim}일 / {suggestion.park}일)
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="p-4 md:p-8">
+                    <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-2xl p-6 md:p-10 border border-gray-200">
+                        <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">2인 교대 야간 근무표</h1>
+                        
+                        {/* 관리자 모드일 경우에만 설정 옵션들을 렌더링합니다. */}
+                        {isManagerView && (
+                            <div className="space-y-4 mb-8">
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
+                                    <div className="flex-1 w-full">
+                                        <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">시작 날짜 선택</label>
+                                        <input type="date" id="startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+                                    </div>
+                                    <div className="flex-1 w-full">
+                                        <label htmlFor="firstPerson" className="block text-sm font-medium text-gray-700 mb-1">전월 마지막 근무자</label>
+                                        <select id="firstPerson" value={lastMonthLastPerson} onChange={e => setLastMonthLastPerson(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                            <option value="kim">{kimName}</option>
+                                            <option value="park">{parkName}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                {/* 이름 변경 입력란 */}
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
+                                    <div className="flex-1 w-full">
+                                        <label htmlFor="kimName" className="block text-sm font-medium text-gray-700 mb-1">근무자 1 이름</label>
+                                        <input type="text" id="kimName" value={kimName} onChange={e => setKimName(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="김철수"/>
+                                    </div>
+                                    <div className="flex-1 w-full">
+                                        <label htmlFor="parkName" className="block text-sm font-medium text-gray-700 mb-1">근무자 2 이름</label>
+                                        <input type="text" id="parkName" value={parkName} onChange={e => setParkName(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="박영희"/>
+                                    </div>
+                                </div>
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
+                                    <div className="flex-1 w-full">
+                                        <label htmlFor="lastMonthConsecutiveDays" className="block text-sm font-medium text-gray-700 mb-1">전월 마지막 연속 근무일수 (1~4일)</label>
+                                        <select id="lastMonthConsecutiveDays" value={lastMonthConsecutiveDays} onChange={e => setLastMonthConsecutiveDays(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                            <option value="1">1일</option>
+                                            <option value="2">2일</option>
+                                            <option value="3">3일</option>
+                                            <option value="4">4일</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
+                                    <div className="flex-1 w-full">
+                                        <label htmlFor="kimRestDays" className="block text-sm font-medium text-gray-700 mb-1">{kimName} 필수 휴무일 (예: 5,10,15)</label>
+                                        <input type="text" id="kimRestDays" value={kimMandatoryRest} onChange={e => setKimMandatoryRest(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="날짜를 쉼표로 구분하여 입력"/>
+                                    </div>
+                                    <div className="flex-1 w-full">
+                                        <label htmlFor="parkRestDays" className="block text-sm font-medium text-gray-700 mb-1">{parkName} 필수 휴무일 (예: 7,12,20)</label>
+                                        <input type="text" id="parkRestDays" value={parkMandatoryRest} onChange={e => setParkMandatoryRest(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="날짜를 쉼표로 구분하여 입력"/>
+                                    </div>
+                                </div>
+                                <div className="flex-1 w-full">
+                                    <label htmlFor="doubleDutyDays" className="block text-sm font-medium text-gray-700 mb-1">전원 근무일 (예: 11,25)</label>
+                                    <input type="text" id="doubleDutyDays" value={doubleDutyDays} onChange={e => setDoubleDutyDays(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="날짜를 쉼표로 구분하여 입력"/>
+                                </div>
+                                
+                                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                                    <button onClick={() => generateSchedule()} className="flex-1 w-full py-3 px-6 text-white font-semibold rounded-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-300 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
+                                        근무표 생성하기
+                                    </button>
+                                    <button onClick={() => suggestDoubleDutyDays()} className="flex-1 w-full py-3 px-6 text-white font-semibold rounded-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-300 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700">
+                                        전원 근무일 제안
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {renderSuggestedDays()}
+
+                        {/* 근무표 표시 영역 */}
+                        <div className="space-y-4">
+                            {/* 관리자 모드일 경우에만 뷰 전환 버튼을 렌더링합니다. */}
+                            {isManagerView && (
+                                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                                    <button onClick={() => setView('table')} className={`flex-1 w-full py-3 px-6 text-white font-semibold rounded-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-300 ${view === 'table' ? 'bg-gradient-to-r from-blue-500 to-purple-600' : 'bg-gray-400 hover:bg-gray-500'}`}>
+                                        표로 보기
+                                    </button>
+                                    <button onClick={() => setView('calendar')} className={`flex-1 w-full py-3 px-6 text-white font-semibold rounded-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-green-300 ${view === 'calendar' ? 'bg-gradient-to-r from-green-500 to-teal-600' : 'bg-gray-400 hover:bg-gray-500'}`}>
+                                        달력으로 보기
+                                    </button>
+                                </div>
+                            )}
+
+                            {view === 'table' && renderTable()}
+                            {view === 'calendar' && renderCalendar()}
+                        </div>
+
+                        {/* 관리자 모드일 경우에만 메시지 박스를 렌더링합니다. */}
+                        {isManagerView && (
+                            <div className={`mt-8 p-4 text-center text-sm font-medium rounded-lg shadow-sm transition-opacity duration-300 ${message ? 'opacity-100' : 'opacity-0'} ${isError ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'}`}>
+                                {message}
+                            </div>
+                            
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // React 앱을 DOM에 렌더링합니다.
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
