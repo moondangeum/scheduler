@@ -4,32 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>2인 교대 야간 근무표</title>
-    <!-- Favicon: 기깔나는 근무표 아이콘 SVG를 추가했습니다. -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'%3E%3C/rect%3E%3Cline x1='16' y1='2' x2='16' y2='6'%3E%3C/line%3E%3Cline x1='8' y1='2' x2='8' y2='6'%3E%3C/line%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3Cpath d='M12 14v4'/%3E%3Cpath d='M10 16h4'/%3E%3C/svg%3E">
-    <!-- Noto Sans KR 폰트를 로드합니다. -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
-    <!-- Tailwind CSS CDN을 로드합니다. -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Tailwind CSS의 기본 sans 폰트를 Noto Sans KR로 설정합니다. */
         :root {
             font-family: 'Noto Sans KR', sans-serif;
-            /* 이미지 저장 시 글씨 잘림 방지를 위해 line-height를 명시적으로 지정합니다. */
-            line-height: 1.4 !important;
-        }
-        /* html2canvas 캡처 시 글자 깨짐 방지를 위한 폰트 렌더링 최적화 */
-        .calendar-cell p {
-            line-height: 1.25 !important;
         }
     </style>
-    <!-- React 및 ReactDOM CDN을 로드하여 React 앱을 브라우저에서 직접 실행합니다. -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel을 로드하여 JSX 문법을 변환합니다. -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Firebase SDKs를 로드합니다. -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -55,27 +43,25 @@
             doc, setDoc, onSnapshot
         };
     </script>
-    <!-- html2canvas 및 jspdf 라이브러리를 로드하여 이미지 및 PDF 내보내기 기능을 구현합니다. -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body class="bg-gray-100 font-sans antialiased">
-    <!-- React 앱이 렌더링될 루트 요소 -->
     <div id="root"></div>
 
     <script type="text/babel">
-        // This React web app is designed to create and manage a two-person
-        // night shift work schedule. It's based on a fixed 3-on, 3-off pattern.
-        // The app is intended for administrators, focusing on schedule setup and export.
+        // 이 React 웹 앱은 2인 교대 야간 근무표를 생성하고 관리합니다.
+        // 3일 근무, 3일 휴무의 고정 패턴을 기반으로 하며, 달력 형태로 볼 수 있습니다.
+        // 이 앱은 관리자 전용으로, 근무표 설정 및 내보내기 기능에 초점을 맞춥니다.
         //
-        // Key features:
-        // - Generate a schedule by setting a start date, the previous month's last worker, and names.
-        // - A "Full Work Day" recommendation feature to meet the 16-day work quota.
-        // - Swap workers by clicking on a calendar date.
-        // - Save and real-time sync schedule settings using Firestore.
-        // - Export the calendar view as an A4 size image or PDF.
+        // 주요 기능:
+        // - 시작 날짜, 전월 마지막 근무자, 이름 등을 설정하여 근무표 생성
+        // - 근무일수(16일)를 맞추기 위한 '전원 근무일' 추천 기능
+        // - 달력에서 날짜를 클릭하여 근무자 교대
+        // - Firestore를 이용한 근무표 설정 저장 및 실시간 동기화
+        // - 달력 뷰를 A4 사이즈 이미지 및 PDF로 내보내기
         //
-        // The app uses Tailwind CSS for a responsive UI.
+        // 이 앱은 Tailwind CSS를 사용하여 반응형 UI를 구현했습니다.
 
         const { useState, useEffect, useRef } = React;
         const { db, auth, appId, onSnapshot, doc, setDoc, signInWithCustomToken, onAuthStateChanged } = window.firebase || {};
@@ -109,18 +95,19 @@
             const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
             /**
-             * Returns the day of the week for a given date.
-             * @param {Date} date - Date object.
-             * @returns {string} Day of the week (e.g., 'Mon').
+             * 지정된 날짜의 요일을 반환합니다.
+             * @param {Date} date - 날짜 객체
+             * @returns {string} 요일 (예: '월')
              */
             const getWeekday = (date) => WEEKDAYS[date.getDay()];
             
             /**
-             * Displays a custom toast message box at the bottom of the screen.
-             * @param {string} msg - Message to display.
-             * @param {boolean} error - Whether it's an error message (changes color).
+             * 화면 하단에 사용자 정의 메시지 박스를 표시합니다.
+             * @param {string} msg - 표시할 메시지
+             * @param {boolean} error - 에러 메시지 여부 (색상 변경)
              */
             const showToast = (msg, error = false) => {
+                // 이전 타임아웃이 있으면 초기화
                 if (toastTimeoutRef.current) {
                     clearTimeout(toastTimeoutRef.current);
                 }
@@ -129,6 +116,7 @@
                 setIsError(error);
                 setIsToastVisible(true);
                 
+                // 3초 후 메시지 숨기기
                 toastTimeoutRef.current = setTimeout(() => {
                     setIsToastVisible(false);
                     setToastMessage('');
@@ -136,7 +124,7 @@
             };
 
             /**
-             * Calculates the '3 on, 3 off' schedule.
+             * '3일 근무 3일 휴무' 패턴으로 근무표를 생성합니다.
              */
             const calculateThreeOnThreeOffSchedule = (startDateStr, lastPerson, lastDays, kimRest, parkRest, bothWork) => {
                 if (!startDateStr) return { schedule: [], kimDays: 0, parkDays: 0 };
@@ -197,7 +185,7 @@
             };
 
             /**
-             * Generates the schedule data.
+             * 근무표 데이터를 생성합니다.
              */
             const generateSchedule = () => {
                 if (!startDate) {
@@ -215,7 +203,7 @@
             };
 
             /**
-             * Saves the current schedule settings to Firestore.
+             * 현재 근무표 설정을 Firestore에 저장합니다.
              */
             const saveSchedule = async () => {
                 if (!isAuthReady) {
@@ -244,32 +232,39 @@
             };
             
             /**
-             * Fetches schedule settings from Firestore in real-time.
+             * 컴포넌트 마운트 시 Firebase 인증 상태를 확인하고 데이터를 불러옵니다.
              */
             useEffect(() => {
-                if (!db || !auth) {
+                if (!auth || !signInWithCustomToken) {
                     setIsLoading(false);
                     return;
                 }
 
-                const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-                    if (user) {
+                const authenticate = async () => {
+                    try {
+                        await signInWithCustomToken(auth, window.__initial_auth_token);
+                        console.log("Firebase authentication successful.");
                         setIsAuthReady(true);
-                    } else {
-                        try {
-                            // Initial sign-in with custom token
-                            if (window.__initial_auth_token) {
-                                await signInWithCustomToken(auth, window.__initial_auth_token);
-                            }
-                        } catch (e) {
-                            console.error("Firebase Auth Error:", e);
-                            showToast("인증 실패, 앱을 새로고침해주세요.", true);
-                        }
+                    } catch (e) {
+                        console.error("Firebase authentication failed:", e);
+                        showToast("Firebase 인증 실패", true);
+                        setIsAuthReady(false);
+                    } finally {
+                        setIsLoading(false);
                     }
-                });
+                };
 
+                authenticate();
+            }, []);
+
+            /**
+             * Firestore에서 근무표 설정을 실시간으로 불러옵니다.
+             */
+            useEffect(() => {
+                if (!db || !isAuthReady) return;
+                
                 const docRef = doc(db, `artifacts/${appId}/public/data/schedules`, 'mainSchedule');
-                const unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+                const unsubscribe = onSnapshot(docRef, (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
                         setStartDate(data.startDate || '');
@@ -281,22 +276,20 @@
                         setParkMandatoryRest(data.parkMandatoryRest || '');
                         setDoubleDutyDays(data.doubleDutyDays || '');
                     } else {
+                         // 저장된 데이터가 없는 경우 오늘 날짜로 초기화
                         const today = new Date().toISOString().split('T')[0];
                         setStartDate(today);
                     }
-                    setIsLoading(false);
                 }, (error) => {
                     console.error("Error fetching document: ", error);
                     showToast("데이터를 불러오는 데 실패했습니다.", true);
-                    setIsLoading(false);
                 });
 
-                return () => {
-                    unsubscribeAuth();
-                    unsubscribeSnapshot();
-                };
-            }, [db, auth, appId]);
+                // cleanup function
+                return () => unsubscribe();
+            }, [db, isAuthReady]);
 
+            // 근무표 설정 데이터가 변경될 때마다 근무표를 재생성합니다.
             useEffect(() => {
                 if(isAuthReady) {
                     generateSchedule();
@@ -304,7 +297,9 @@
             }, [startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, doubleDutyDays, kimName, parkName, isAuthReady]);
             
             /**
-             * Suggests "Full Work Day" to meet the 16-day work quota.
+             * 근무 일수를 정확히 16일에 맞추기 위한 '전원 근무일'을 제안합니다.
+             * 이때, 3일 연속 휴무 중간을 끊지 않도록 제안합니다.
+             * 또한, 전원 근무일 사이에는 최소 2일의 휴무일을 보장합니다.
              */
             const suggestDoubleDutyDays = () => {
                 if (!startDate) {
@@ -316,16 +311,20 @@
                 const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
                 const availableDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
+                // 필수 휴무일 및 기존 전원 근무일 세트 생성
                 const kimRestDays = new Set(kimMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const parkRestDays = new Set(parkMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const currentDoubleDutySet = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 
+                // 순수 3on-3off 패턴의 스케줄을 미리 계산합니다.
                 const rawSchedule = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, '', '', '').schedule;
                 
+                // 전원 근무일을 제외한 기본 근무 일수 계산
                 const { kimDays: baseKimDays, parkDays: baseParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, '');
 
                 const suggestions = [];
 
+                // 이미 16일인 경우
                 const currentKimDays = baseKimDays + currentDoubleDutySet.size;
                 const currentParkDays = baseParkDays + currentDoubleDutySet.size;
                 if (currentKimDays === 16 && currentParkDays === 16) {
@@ -334,13 +333,18 @@
                     return;
                 }
                 
+                // 단일 날짜 추가로 16일이 되는 경우 탐색
                 for (const day of availableDays) {
                     const dayIndex = day - 1;
                     
+                    // 필수 휴무일이거나 이미 전원 근무일인 경우 건너뛰기
                     if (currentDoubleDutySet.has(day) || kimRestDays.has(day) || parkRestDays.has(day)) {
                         continue;
                     }
                     
+                    // 전원 근무일이 3일 휴무 사이를 깨는지 확인합니다.
+                    // 원래 패턴에서 해당 날짜가 특정인의 연속 3일 휴무의 두 번째 날인지 확인합니다.
+                    // day-1, day, day+1 모두 휴무일인 경우
                     const isBreakingKimRest = dayIndex > 0 && dayIndex < daysInMonth - 1 &&
                                               rawSchedule[dayIndex - 1].kim === '휴무' &&
                                               rawSchedule[dayIndex].kim === '휴무' &&
@@ -355,6 +359,7 @@
                         continue;
                     }
 
+                    // 새로운 전원 근무일이 기존 전원 근무일과 2일 이내로 붙어있는지 확인
                     const hasNearbyDoubleDuty = Array.from(currentDoubleDutySet).some(d => Math.abs(d - day) <= 2);
                     if (hasNearbyDoubleDuty) {
                         continue;
@@ -368,6 +373,7 @@
                     }
                 }
                 
+                // 두 날짜 추가로 16일이 되는 경우 탐색 (단일 날짜로 해결되지 않았을 때)
                 if (suggestions.length === 0) {
                     for (let i = 0; i < availableDays.length; i++) {
                         for (let j = i + 1; j < availableDays.length; j++) {
@@ -381,6 +387,7 @@
                                 continue;
                             }
                             
+                            // 전원 근무일이 3일 휴무 사이를 깨는지 확인
                             const isBreakingKimRest1 = day1Index > 0 && day1Index < daysInMonth - 1 &&
                                                        rawSchedule[day1Index - 1].kim === '휴무' &&
                                                        rawSchedule[day1Index].kim === '휴무' &&
@@ -403,6 +410,7 @@
                                 continue;
                             }
 
+                            // 두 날짜가 서로 너무 가깝거나, 기존 전원 근무일과 너무 가까운지 확인
                             if (Math.abs(day2 - day1) <= 2) {
                                 continue;
                             }
@@ -431,7 +439,7 @@
             };
             
             /**
-             * Adds the suggested days to the double duty day list.
+             * 추천된 전원 근무일 버튼을 클릭했을 때 호출됩니다.
              */
             const handleAddSuggestedDay = (days) => {
                 const newDoubleDutyDays = doubleDutyDays ? `${doubleDutyDays},${days.join(',')}` : `${days.join(',')}`;
@@ -441,7 +449,7 @@
             };
             
             /**
-             * Swaps the shift for a selected day.
+             * 달력에서 날짜를 클릭하여 근무를 교대하는 함수입니다.
              */
             const handleShiftSwap = (index) => {
                 if (scheduleData.length === 0) return;
@@ -474,8 +482,11 @@
             };
 
             /**
-             * Exports the calendar view as an A4 size image.
-             * It applies several optimizations to prevent text clipping and pixelation.
+             * 달력 뷰를 A4 사이즈 이미지로 저장합니다.
+             * 폰트 깨짐 현상을 방지하기 위해 렌더링 스케일을 높이고
+             * 폰트 스타일을 임시로 직접 지정하는 로직을 추가했습니다.
+             *
+             * ** 개선: html2canvas의 scale을 6으로 높여 이미지 품질을 개선합니다. **
              */
             const exportCalendarAsImage = () => {
                 if (!calendarRef.current) {
@@ -484,31 +495,49 @@
                 }
                 
                 const calendarElement = calendarRef.current;
-                
-                html2canvas(calendarElement, {
-                    scale: 6,
-                    useCORS: true,
-                    allowTaint: true,
-                    foreignObjectRendering: true, // 글자 잘림 방지 옵션 추가
-                    ignoreElements: (element) => element.id === 'toast-message-container'
-                }).then(canvas => {
-                    const imgData = canvas.toDataURL('image/png');
-                    const link = document.createElement('a');
-                    link.href = imgData;
-                    link.download = `근무표_${startDate}.png`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    showToast('근무표 이미지가 저장되었습니다!');
-                }).catch(err => {
-                    console.error('Error saving image:', err);
-                    showToast('이미지 저장에 실패했습니다.', true);
+                const boldElements = calendarElement.querySelectorAll('.font-bold, .font-extrabold');
+
+                // 폰트 스타일을 임시로 인라인으로 지정
+                const originalStyles = [];
+                boldElements.forEach(el => {
+                    originalStyles.push({ el, style: el.style.fontWeight });
+                    el.style.fontWeight = 'bold'; // 강제로 굵기 적용
                 });
+
+                // 약간의 지연 후 캡처
+                setTimeout(() => {
+                    html2canvas(calendarElement, {
+                        scale: 6, // 이미지 품질 개선을 위해 스케일을 6으로 증가
+                        useCORS: true,
+                        allowTaint: true,
+                        ignoreElements: (element) => element.id === 'toast-message-container' // 토스트 메시지 제외
+                    }).then(canvas => {
+                        const imgData = canvas.toDataURL('image/png');
+                        const link = document.createElement('a');
+                        link.href = imgData;
+                        link.download = `근무표_${startDate}.png`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        showToast('근무표 이미지가 저장되었습니다!');
+                    }).catch(err => {
+                        console.error('Error saving image:', err);
+                        showToast('이미지 저장에 실패했습니다.', true);
+                    }).finally(() => {
+                        // 원래 폰트 스타일로 복구
+                        originalStyles.forEach(({ el, style }) => {
+                            el.style.fontWeight = style;
+                        });
+                    });
+                }, 50); // 50ms 지연
             };
 
             /**
-             * Exports the calendar view as an A4 size PDF.
-             * It applies several optimizations to prevent text clipping and pixelation.
+             * 달력 뷰를 A4 사이즈 PDF로 저장합니다.
+             * 폰트 깨짐 현상을 방지하기 위해 렌더링 스케일을 높이고
+             * 폰트 스타일을 임시로 직접 지정하는 로직을 추가했습니다.
+             *
+             * ** 개선: html2canvas의 scale을 6으로 높여 이미지 품질을 개선합니다. **
              */
             const exportCalendarAsPdf = () => {
                 if (!calendarRef.current) {
@@ -517,40 +546,55 @@
                 }
 
                 const calendarElement = calendarRef.current;
+                const boldElements = calendarElement.querySelectorAll('.font-bold, .font-extrabold');
 
-                html2canvas(calendarElement, {
-                    scale: 6,
-                    useCORS: true,
-                    allowTaint: true,
-                    foreignObjectRendering: true, // 글자 잘림 방지 옵션 추가
-                    ignoreElements: (element) => element.id === 'toast-message-container'
-                }).then(canvas => {
-                    const imgData = canvas.toDataURL('image/jpeg', 1.0);
-                    const pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
-                    const imgWidth = 210;
-                    const pageHeight = 297;
-                    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                    let heightLeft = imgHeight;
-                    let position = 0;
+                // 폰트 스타일을 임시로 인라인으로 지정
+                const originalStyles = [];
+                boldElements.forEach(el => {
+                    originalStyles.push({ el, style: el.style.fontWeight });
+                    el.style.fontWeight = 'bold'; // 강제로 굵기 적용
+                });
 
-                    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-                    heightLeft -= pageHeight;
+                setTimeout(() => {
+                    html2canvas(calendarElement, {
+                        scale: 6, // PDF 품질 개선을 위해 스케일을 6으로 증가
+                        useCORS: true,
+                        allowTaint: true,
+                        ignoreElements: (element) => element.id === 'toast-message-container' // 토스트 메시지 제외
+                    }).then(canvas => {
+                        const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                        const pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
+                        const imgWidth = 210; // A4 width in mm
+                        const pageHeight = 297; // A4 height in mm
+                        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                        let heightLeft = imgHeight;
+                        let position = 0;
 
-                    while (heightLeft >= 0) {
-                        position = heightLeft - imgHeight;
-                        pdf.addPage();
                         pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
                         heightLeft -= pageHeight;
-                    }
 
-                    pdf.save(`근무표_${startDate}.pdf`);
-                    showToast('근무표가 PDF 파일로 저장되었습니다!');
-                }).catch(err => {
-                    console.error('Error saving PDF:', err);
-                    showToast('PDF 저장에 실패했습니다.', true);
-                });
+                        while (heightLeft >= 0) {
+                            position = heightLeft - imgHeight;
+                            pdf.addPage();
+                            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+                            heightLeft -= pageHeight;
+                        }
+
+                        pdf.save(`근무표_${startDate}.pdf`);
+                        showToast('근무표가 PDF 파일로 저장되었습니다!');
+                    }).catch(err => {
+                        console.error('Error saving PDF:', err);
+                        showToast('PDF 저장에 실패했습니다.', true);
+                    }).finally(() => {
+                        // 원래 폰트 스타일로 복구
+                        originalStyles.forEach(({ el, style }) => {
+                            el.style.fontWeight = style;
+                        });
+                    });
+                }, 50);
             };
             
+            // scheduleData가 변경될 때마다 근무일수를 다시 계산합니다.
             useEffect(() => {
                 let kimCount = 0;
                 let parkCount = 0;
@@ -600,11 +644,12 @@
                 
                 const calendarDays = [...prevMonthDays, ...scheduleData.slice(0, daysInMonth)];
                 
+                // PC에서는 고정 너비, 모바일에서는 100% 너비
                 const calendarContainerClass = `bg-white rounded-xl p-4 shadow-md max-w-2xl mx-auto md:max-w-4xl lg:max-w-5xl xl:max-w-7xl`;
                 
                 return (
                     <div className={calendarContainerClass} ref={calendarRef}>
-                        <div className="text-center text-2xl font-bold mb-4 text-gray-800">
+                        <div className="text-center text-2xl font-bold mb-4 text-gray-800" data-original-font="bold">
                             {start.getFullYear()}년 {start.getMonth() + 1}월
                         </div>
                         <div className="flex justify-around items-center bg-gray-100 p-2 rounded-lg mb-4 shadow-inner">
@@ -612,16 +657,16 @@
                                 onClick={() => setHighlightedPerson(h => h === 'kim' ? null : 'kim')}
                                 className={`flex-1 flex flex-col items-center p-2 rounded-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-300 transform hover:scale-105 ${highlightedPerson === 'kim' ? 'bg-blue-100 ring-2 ring-blue-500' : 'bg-white'}`}
                             >
-                                <div className="font-bold text-base md:text-lg text-blue-600 truncate">{kimName}</div>
-                                <div className="text-xl md:text-2xl font-extrabold">{kimWorkDays}일</div>
+                                <div className="font-bold text-base md:text-lg text-blue-600 truncate" data-original-font="bold">{kimName}</div>
+                                <div className="text-xl md:text-2xl font-extrabold" data-original-font="extrabold">{kimWorkDays}일</div>
                             </button>
                             <div className="h-16 w-px bg-gray-300 mx-4"></div>
                             <button
                                 onClick={() => setHighlightedPerson(h => h === 'park' ? null : 'park')}
                                 className={`flex-1 flex flex-col items-center p-2 rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-red-300 ${highlightedPerson === 'park' ? 'bg-red-100 ring-2 ring-red-500' : 'bg-white'}`}
                             >
-                                <div className="font-bold text-base md:text-lg text-red-600 truncate">{parkName}</div>
-                                <div className="text-xl md:text-2xl font-extrabold">{parkWorkDays}일</div>
+                                <div className="font-bold text-base md:text-lg text-red-600 truncate" data-original-font="bold">{parkName}</div>
+                                <div className="text-xl md:text-2xl font-extrabold" data-original-font="extrabold">{parkWorkDays}일</div>
                             </button>
                         </div>
                         <div className="grid grid-cols-7 gap-1 text-center text-xs sm:text-sm font-semibold">
@@ -640,6 +685,7 @@
                                 let kimColorClass, parkColorClass;
                                 let kimFontClass, parkFontClass;
                                 
+                                // '전원 근무일'인 경우 기본 스타일을 정의
                                 const isDoubleDutyDay = day.isCurrentMonth && doubleDutyDaysSet.current.has(day.date);
                                 
                                 if (isDoubleDutyDay) {
@@ -648,6 +694,7 @@
                                     kimFontClass = 'font-bold';
                                     parkFontClass = 'font-bold';
                                 } else {
+                                    // 기본 색상 설정
                                     if (day.kim === '근무') {
                                         kimColorClass = 'text-blue-600';
                                     } else {
@@ -660,6 +707,7 @@
                                         parkColorClass = 'text-red-400';
                                     }
                                     
+                                    // 하이라이트 상태에 따른 색상 및 폰트 변경
                                     if (highlightedPerson === 'kim') {
                                         kimFontClass = 'font-bold';
                                         parkColorClass = 'text-gray-400';
@@ -672,6 +720,7 @@
                                     }
                                 }
 
+                                // 보더 클래스 (PC/모바일 구분)
                                 let highlightClass = 'border-gray-200';
                                 if (isDoubleDutyDay) {
                                     highlightClass = 'border-4 border-green-500';
@@ -687,20 +736,23 @@
                                     <div 
                                         key={index} 
                                         onClick={() => day && day.isCurrentMonth && handleShiftSwap(index - prevMonthDays.length)}
-                                        className={`rounded-lg p-2 flex flex-col items-center justify-start text-xs sm:text-sm border shadow-sm transition-all duration-200 hover:scale-105 hover:shadow-lg cursor-pointer ${highlightClass} ${dayCellClass} min-h-32 calendar-cell`}
+                                        // 고정 높이 제거, 최소 높이와 flexbox로 변경
+                                        className={`rounded-lg p-2 flex flex-col items-center justify-start text-xs sm:text-sm border shadow-sm transition-all duration-200 hover:scale-105 hover:shadow-lg cursor-pointer ${highlightClass} ${dayCellClass} min-h-32`}
                                     >
                                         {day.isCurrentMonth ? (
                                             <>
-                                                <div className="text-gray-900 font-bold mb-1">{day.date}</div>
-                                                {/* 모바일 텍스트 잘림 방지: font-xs 및 패딩 조정 */}
-                                                <div className={`text-xs w-full px-0 sm:hidden`}>
-                                                    <p className={`${kimColorClass} ${kimFontClass} text-center`}>{day.kim}</p>
-                                                    <p className={`${parkColorClass} ${parkFontClass} text-center`}>{day.park}</p>
+                                                <div className="text-gray-900 font-bold mb-1" data-original-font="bold">{day.date}</div>
+                                                <div className={`text-sm truncate w-full px-1 ${kimColorClass} ${kimFontClass} text-center hidden sm:block`} data-original-font={kimFontClass === 'font-bold' ? 'bold' : ''}>
+                                                    {kimName} {day.kim === '근무' ? '근무' : '휴무'}
                                                 </div>
-                                                {/* PC/태블릿 텍스트 */}
-                                                <div className={`text-sm w-full px-1 hidden sm:block`}>
-                                                    <p className={`${kimColorClass} ${kimFontClass} text-center truncate`}>{kimName} {day.kim}</p>
-                                                    <p className={`${parkColorClass} ${parkFontClass} text-center truncate`}>{parkName} {day.park}</p>
+                                                <div className={`text-sm truncate w-full px-1 ${parkColorClass} ${parkFontClass} text-center hidden sm:block`} data-original-font={parkFontClass === 'font-bold' ? 'bold' : ''}>
+                                                    {parkName} {day.park === '근무' ? '근무' : '휴무'}
+                                                </div>
+                                                <div className={`text-xs w-full px-0.5 mt-0.5 ${kimColorClass} ${kimFontClass} text-center sm:hidden`} data-original-font={kimFontClass === 'font-bold' ? 'bold' : ''}>
+                                                    {day.kim}
+                                                </div>
+                                                <div className={`text-xs w-full px-0.5 mt-0.5 ${parkColorClass} ${parkFontClass} text-center sm:hidden`} data-original-font={parkFontClass === 'font-bold' ? 'bold' : ''}>
+                                                    {day.park}
                                                 </div>
                                             </>
                                         ) : (
@@ -714,12 +766,13 @@
                 );
             };
             
+            // 추천된 전원 근무일 버튼을 렌더링하는 함수
             const renderSuggestedDays = () => {
                 if (suggestedDays.length === 0) return null;
 
                 return (
                     <div className="bg-gray-100 p-4 rounded-xl shadow-inner mb-8">
-                        <h3 className="text-lg font-bold text-gray-800 mb-4">근무일수 16일 맞추기 제안:</h3>
+                        <h3 className="text-lg font-bold text-gray-800 mb-4" data-original-font="bold">근무일수 16일 맞추기 제안:</h3>
                         <div className="flex flex-wrap gap-2">
                             {suggestedDays.map((suggestion, index) => (
                                 <button
@@ -750,7 +803,7 @@
             return (
                 <div className="p-4 md:p-8 min-h-screen flex justify-center">
                     <div className="w-full max-w-7xl bg-white shadow-xl rounded-2xl p-6 md:p-10 border border-gray-200">
-                        <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">2인 교대 야간 근무표</h1>
+                        <h1 className="text-3xl font-bold text-center mb-6 text-gray-800" data-original-font="bold">2인 교대 야간 근무표</h1>
                         
                         <div className="space-y-4 mb-8">
                             <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
@@ -766,6 +819,7 @@
                                     </select>
                                 </div>
                             </div>
+                            {/* 이름 변경 입력란 */}
                             <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
                                 <div className="flex-1 w-full">
                                     <label htmlFor="kimName" className="block text-sm font-medium text-gray-700 mb-1">근무자 1 이름</label>
@@ -810,6 +864,7 @@
                                     전원 근무일 제안
                                 </button>
                             </div>
+                            {/* 저장 및 내보내기 버튼 추가 */}
                             <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mt-4">
                                 <button onClick={saveSchedule} className="flex-1 w-full py-3 px-6 text-white font-semibold rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-indigo-300 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700">
                                     근무표 클라우드에 저장하기
@@ -825,28 +880,31 @@
                         
                         {renderSuggestedDays()}
 
+                        {/* 근무표 표시 영역 */}
                         <div className="space-y-4">
                             {renderCalendar()}
                         </div>
                     </div>
 
-                    <div 
-                        className="fixed inset-x-0 bottom-4 z-10 flex items-center justify-center pointer-events-none"
-                        id="toast-message-container"
-                    >
-                        {isToastVisible && (
+                    {/* 화면 하단에 표시되는 커스텀 토스트 메시지 */}
+                    {isToastVisible && (
+                        <div 
+                            className="fixed inset-x-0 bottom-4 z-10 flex items-center justify-center pointer-events-none"
+                            id="toast-message-container"
+                        >
                             <div 
                                 className={`bg-white rounded-xl shadow-lg p-4 text-center transform transition-transform duration-300 ease-out 
                                     ${isError ? 'border-2 border-red-500' : 'border-2 border-green-500'}`}
                             >
                                 <p className="text-gray-800 font-semibold">{toastMessage}</p>
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
             );
         };
 
+        // React 앱을 DOM에 렌더링합니다.
         ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
