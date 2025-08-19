@@ -632,37 +632,21 @@
                                     
                                 const dayCellClass = day.isCurrentMonth ? '' : 'bg-gray-100 text-gray-400';
 
-                                // 모바일용 텍스트 클래스
-                                const mobileTextClass = `text-xs md:hidden`;
-                                // PC용 텍스트 클래스
-                                const pcTextClass = `text-sm md:text-base hidden md:block`;
-                                
-                                // 근무/휴무 텍스트
-                                const kimStatusText = day.kim === '근무' ? `근무` : `휴무`;
-                                const parkStatusText = day.park === '근무' ? `근무` : `휴무`;
-
                                 return (
                                     <div 
                                         key={index} 
                                         onClick={() => day && day.isCurrentMonth && handleShiftSwap(index - prevMonthDays.length)}
-                                        className={`rounded-lg p-1 sm:p-2 h-20 sm:h-28 flex flex-col items-center justify-start text-xs sm:text-sm border shadow-sm transition-all duration-200 hover:scale-105 hover:shadow-lg cursor-pointer ${highlightClass} ${dayCellClass}`}
+                                        // 고정 높이 제거, 최소 높이와 flexbox로 변경
+                                        className={`rounded-lg p-2 flex flex-col items-center justify-start text-xs sm:text-sm border shadow-sm transition-all duration-200 hover:scale-105 hover:shadow-lg cursor-pointer ${highlightClass} ${dayCellClass} min-h-32`}
                                     >
                                         {day.isCurrentMonth ? (
                                             <>
                                                 <div className="text-gray-900 font-bold mb-1">{day.date}</div>
-                                                {/* PC 버전 */}
-                                                <div className={`${pcTextClass} truncate w-full px-1 ${kimColorClass} ${kimFontClass}`}>
-                                                    {kimName} {kimStatusText}
+                                                <div className={`text-sm truncate w-full px-1 ${kimColorClass} ${kimFontClass} text-center`}>
+                                                    {kimName} {day.kim === '근무' ? '근무' : '휴무'}
                                                 </div>
-                                                <div className={`${pcTextClass} truncate w-full px-1 ${parkColorClass} ${parkFontClass}`}>
-                                                    {parkName} {parkStatusText}
-                                                </div>
-                                                {/* 모바일 버전 */}
-                                                <div className={`${mobileTextClass} ${kimColorClass} ${kimFontClass}`}>
-                                                    {kimStatusText}
-                                                </div>
-                                                <div className={`${mobileTextClass} ${parkColorClass} ${parkFontClass}`}>
-                                                    {parkStatusText}
+                                                <div className={`text-sm truncate w-full px-1 ${parkColorClass} ${parkFontClass} text-center`}>
+                                                    {parkName} {day.park === '근무' ? '근무' : '휴무'}
                                                 </div>
                                             </>
                                         ) : (
