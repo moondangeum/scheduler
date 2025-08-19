@@ -307,6 +307,7 @@
             /**
              * 근무 일수를 정확히 16일에 맞추기 위한 '전원 근무일'을 제안합니다.
              * 이때, 전원 근무일 사이에는 최소 2일의 휴무일을 보장합니다.
+             * 또한, 원래의 3일 휴무 패턴을 깨지 않도록 제안합니다.
              */
             const suggestDoubleDutyDays = () => {
                 if (!startDate) {
@@ -314,6 +315,7 @@
                     return;
                 }
                 
+                // 필수 휴무일 및 기존 전원 근무일 세트 생성
                 const kimRestDays = new Set(kimMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const parkRestDays = new Set(parkMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const currentDoubleDutySet = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
@@ -337,14 +339,33 @@
                     setSuggestedDays([]);
                     return;
                 }
+                
+                // 순수 3on-3off 패턴의 스케줄을 미리 계산합니다.
+                const rawSchedule = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, '', '', '').schedule;
 
                 // 단일 날짜 추가로 16일이 되는 경우 탐색
                 for (const day of availableDays) {
+                    const dayIndex = day - 1;
+                    
                     // 필수 휴무일이거나 이미 전원 근무일인 경우 건너뛰기
                     if (currentDoubleDutySet.has(day) || kimRestDays.has(day) || parkRestDays.has(day)) {
                         continue;
                     }
                     
+                    // 전원 근무일이 3일 휴무 사이를 깨는지 확인합니다.
+                    // 원래 패턴에서 해당 날짜가 특정인의 연속 3일 휴무의 두 번째 날인지 확인합니다.
+                    const isBreakingKimRest = rawSchedule[dayIndex].kim === '휴무' &&
+                                              (dayIndex > 0 && rawSchedule[dayIndex - 1].kim === '휴무') &&
+                                              (dayIndex < daysInMonth - 1 && rawSchedule[dayIndex + 1].kim === '휴무');
+                    
+                    const isBreakingParkRest = rawSchedule[dayIndex].park === '휴무' &&
+                                               (dayIndex > 0 && rawSchedule[dayIndex - 1].park === '휴무') &&
+                                               (dayIndex < daysInMonth - 1 && rawSchedule[dayIndex + 1].park === '휴무');
+
+                    if (isBreakingKimRest || isBreakingParkRest) {
+                        continue;
+                    }
+
                     // 새로운 전원 근무일이 기존 전원 근무일과 2일 이내로 붙어있는지 확인
                     const hasNearbyDoubleDuty = Array.from(currentDoubleDutySet).some(d => Math.abs(d - day) <= 2);
                     if (hasNearbyDoubleDuty) {
@@ -365,10 +386,33 @@
                         for (let j = i + 1; j < availableDays.length; j++) {
                             const day1 = availableDays[i];
                             const day2 = availableDays[j];
+                            
+                            const day1Index = day1 - 1;
+                            const day2Index = day2 - 1;
+
                             if (currentDoubleDutySet.has(day1) || currentDoubleDutySet.has(day2) || kimRestDays.has(day1) || kimRestDays.has(day2) || parkRestDays.has(day1) || parkRestDays.has(day2)) {
                                 continue;
                             }
                             
+                            // 전원 근무일이 3일 휴무 사이를 깨는지 확인
+                            const isBreakingKimRest1 = rawSchedule[day1Index].kim === '휴무' &&
+                                                       (day1Index > 0 && rawSchedule[day1Index - 1].kim === '휴무') &&
+                                                       (day1Index < daysInMonth - 1 && rawSchedule[day1Index + 1].kim === '휴무');
+                            const isBreakingParkRest1 = rawSchedule[day1Index].park === '휴무' &&
+                                                        (day1Index > 0 && rawSchedule[day1Index - 1].park === '휴무') &&
+                                                        (day1Index < daysInMonth - 1 && rawSchedule[day1Index + 1].park === '휴무');
+
+                            const isBreakingKimRest2 = rawSchedule[day2Index].kim === '휴무' &&
+                                                       (day2Index > 0 && rawSchedule[day2Index - 1].kim === '휴무') &&
+                                                       (day2Index < daysInMonth - 1 && rawSchedule[day2Index + 1].kim === '휴무');
+                            const isBreakingParkRest2 = rawSchedule[day2Index].park === '휴무' &&
+                                                        (day2Index > 0 && rawSchedule[day2Index - 1].park === '휴무') &&
+                                                        (day2Index < daysInMonth - 1 && rawSchedule[day2Index + 1].park === '휴무');
+                            
+                            if (isBreakingKimRest1 || isBreakingParkRest1 || isBreakingKimRest2 || isBreakingParkRest2) {
+                                continue;
+                            }
+
                             // 두 날짜가 서로 너무 가깝거나, 기존 전원 근무일과 너무 가까운지 확인
                             if (Math.abs(day2 - day1) <= 2) {
                                 continue;
