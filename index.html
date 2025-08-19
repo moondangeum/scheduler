@@ -486,6 +486,8 @@
 
             /**
              * 달력 뷰를 A4 사이즈 이미지로 저장합니다.
+             * 폰트 깨짐 현상을 방지하기 위해 렌더링 스케일을 높이고
+             * 폰트 스타일을 임시로 직접 지정하는 로직을 추가했습니다.
              */
             const exportCalendarAsImage = () => {
                 if (!calendarRef.current) {
@@ -496,14 +498,21 @@
                 const calendarElement = calendarRef.current;
                 const boldElements = calendarElement.querySelectorAll('.font-bold, .font-extrabold');
 
-                // 폰트 스타일을 임시로 제거
-                boldElements.forEach(el => el.classList.remove('font-bold', 'font-extrabold'));
+                // 폰트 스타일을 임시로 인라인으로 지정
+                const originalStyles = [];
+                boldElements.forEach(el => {
+                    originalStyles.push({ el, style: el.style.fontWeight });
+                    el.style.fontWeight = 'bold'; // 강제로 굵기 적용
+                });
 
                 // 약간의 지연 후 캡처
                 setTimeout(() => {
                     html2canvas(calendarElement, {
-                        scale: 3, // 고해상도 이미지 생성을 위해 스케일 증가
+                        scale: 4, // 폰트 품질 개선을 위해 스케일을 4로 증가
                         useCORS: true,
+                        // html2canvas 옵션을 명시적으로 설정하여 폰트 렌더링 안정성 향상
+                        allowTaint: true,
+                        ignoreElements: (element) => element.id === 'toast-message-container' // 토스트 메시지 제외
                     }).then(canvas => {
                         const imgData = canvas.toDataURL('image/png');
                         const link = document.createElement('a');
@@ -517,17 +526,9 @@
                         console.error('Error saving image:', err);
                         showToast('이미지 저장에 실패했습니다.', true);
                     }).finally(() => {
-                        // 폰트 스타일을 원래대로 복구
-                        boldElements.forEach(el => {
-                            // 여기서는 원래 상태를 알 수 없으므로, 간단하게 원래 클래스를 다시 추가합니다.
-                            // font-bold와 font-extrabold를 원래대로 복구합니다.
-                            // 더 정확하게는 원래 클래스 목록을 저장했다가 복구해야 하지만,
-                            // 이 앱에서는 이 방식으로도 충분히 동작합니다.
-                            if (el.dataset.originalFont === 'bold') {
-                                el.classList.add('font-bold');
-                            } else if (el.dataset.originalFont === 'extrabold') {
-                                el.classList.add('font-extrabold');
-                            }
+                        // 원래 폰트 스타일로 복구
+                        originalStyles.forEach(({ el, style }) => {
+                            el.style.fontWeight = style;
                         });
                     });
                 }, 50); // 50ms 지연
@@ -535,6 +536,8 @@
 
             /**
              * 달력 뷰를 A4 사이즈 PDF로 저장합니다.
+             * 폰트 깨짐 현상을 방지하기 위해 렌더링 스케일을 높이고
+             * 폰트 스타일을 임시로 직접 지정하는 로직을 추가했습니다.
              */
             const exportCalendarAsPdf = () => {
                 if (!calendarRef.current) {
@@ -545,15 +548,19 @@
                 const calendarElement = calendarRef.current;
                 const boldElements = calendarElement.querySelectorAll('.font-bold, .font-extrabold');
 
-                // 폰트 스타일을 임시로 제거
-                boldElements.forEach(el => el.classList.remove('font-bold', 'font-extrabold'));
+                // 폰트 스타일을 임시로 인라인으로 지정
+                const originalStyles = [];
+                boldElements.forEach(el => {
+                    originalStyles.push({ el, style: el.style.fontWeight });
+                    el.style.fontWeight = 'bold'; // 강제로 굵기 적용
+                });
 
                 setTimeout(() => {
                     html2canvas(calendarElement, {
-                        scale: 3,
+                        scale: 4, // PDF 품질 개선을 위해 스케일을 4로 증가
                         useCORS: true,
-                        windowWidth: calendarElement.scrollWidth,
-                        windowHeight: calendarElement.scrollHeight
+                        allowTaint: true,
+                        ignoreElements: (element) => element.id === 'toast-message-container' // 토스트 메시지 제외
                     }).then(canvas => {
                         const imgData = canvas.toDataURL('image/jpeg', 1.0);
                         const pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
@@ -579,13 +586,9 @@
                         console.error('Error saving PDF:', err);
                         showToast('PDF 저장에 실패했습니다.', true);
                     }).finally(() => {
-                        // 폰트 스타일을 원래대로 복구
-                        boldElements.forEach(el => {
-                            if (el.dataset.originalFont === 'bold') {
-                                el.classList.add('font-bold');
-                            } else if (el.dataset.originalFont === 'extrabold') {
-                                el.classList.add('font-extrabold');
-                            }
+                        // 원래 폰트 스타일로 복구
+                        originalStyles.forEach(({ el, style }) => {
+                            el.style.fontWeight = style;
                         });
                     });
                 }, 50);
@@ -881,6 +884,7 @@
                     {isToastVisible && (
                         <div 
                             className="fixed inset-x-0 bottom-4 z-10 flex items-center justify-center pointer-events-none"
+                            id="toast-message-container"
                         >
                             <div 
                                 className={`bg-white rounded-xl shadow-lg p-4 text-center transform transition-transform duration-300 ease-out 
