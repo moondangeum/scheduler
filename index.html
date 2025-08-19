@@ -4,20 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>2인 교대 야간 근무표</title>
-    <!-- Favicon: 기깔나는 근무표 아이콘 SVG를 추가했습니다. -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'%3E%3C/rect%3E%3Cline x1='16' y1='2' x2='16' y2='6'%3E%3C/line%3E%3Cline x1='8' y1='2' x2='8' y2='6'%3E%3C/line%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3Cpath d='M12 14v4'/%3E%3Cpath d='M10 16h4'/%3E%3C/svg%3E">
-    <!-- Noto Sans KR 폰트를 로드합니다. -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
     <!-- Tailwind CSS CDN을 로드합니다. -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Tailwind CSS의 기본 sans 폰트를 Noto Sans KR로 설정합니다. */
-        :root {
-            font-family: 'Noto Sans KR', sans-serif;
-        }
-    </style>
     <!-- React 및 ReactDOM CDN을 로드하여 React 앱을 브라우저에서 직접 실행합니다. -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -29,854 +17,352 @@
         import { getAuth, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         
-        // Canvas 환경에서 제공되는 전역 변수들
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Canvas 환경에서 제공되는 전역 변수를 사용합니다.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // Firebase 초기화
-        let app, db, auth;
-        if (firebaseConfig) {
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-        }
-
-        // 전역으로 내보내기
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
         window.firebase = {
-            db, auth, appId,
-            signInWithCustomToken, onAuthStateChanged,
-            doc, setDoc, onSnapshot
+            app,
+            db,
+            auth,
+            signInWithCustomToken,
+            onAuthStateChanged,
+            doc,
+            setDoc,
+            onSnapshot
         };
     </script>
-    <!-- html2canvas 및 jspdf 라이브러리를 로드하여 이미지 및 PDF 내보내기 기능을 구현합니다. -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
-<body class="bg-gray-100 font-sans antialiased">
-    <!-- React 앱이 렌더링될 루트 요소 -->
+<body className="bg-gray-100 font-sans leading-normal tracking-normal">
+
     <div id="root"></div>
 
     <script type="text/babel">
-        // 이 React 웹 앱은 2인 교대 야간 근무표를 생성하고 관리합니다.
-        // 3일 근무, 3일 휴무의 고정 패턴을 기반으로 하며, 달력 형태로 볼 수 있습니다.
-        // 이 앱은 관리자 전용으로, 근무표 설정 및 내보내기 기능에 초점을 맞춥니다.
-        //
-        // 주요 기능:
-        // - 시작 날짜, 전월 마지막 근무자, 이름 등을 설정하여 근무표 생성
-        // - 근무일수(16일)를 맞추기 위한 '전원 근무일' 추천 기능
-        // - 달력에서 날짜를 클릭하여 근무자 교대
-        // - Firestore를 이용한 근무표 설정 저장 및 실시간 동기화
-        // - 달력 뷰를 A4 사이즈 이미지 및 PDF로 내보내기
-        //
-        // 이 앱은 Tailwind CSS를 사용하여 반응형 UI를 구현했습니다.
-
         const { useState, useEffect, useRef } = React;
-        const { db, auth, appId, onSnapshot, doc, setDoc, signInWithCustomToken, onAuthStateChanged } = window.firebase || {};
 
         const App = () => {
-            const [startDate, setStartDate] = useState(() => {
-                const today = new Date();
-                return today.toISOString().split('T')[0];
-            });
-            const [scheduleData, setScheduleData] = useState([]);
+            const [data, setData] = useState(null);
+            const [selectedDate, setSelectedDate] = useState(new Date());
+            const [isAuthReady, setIsAuthReady] = useState(false);
+            const [userId, setUserId] = useState(null);
             const [toastMessage, setToastMessage] = useState('');
             const [isToastVisible, setIsToastVisible] = useState(false);
             const [isError, setIsError] = useState(false);
-            const [kimWorkDays, setKimWorkDays] = useState(0);
-            const [parkWorkDays, setParkWorkDays] = useState(0);
-            const [highlightedPerson, setHighlightedPerson] = useState(null);
-            const [kimMandatoryRest, setKimMandatoryRest] = useState('');
-            const [parkMandatoryRest, setParkMandatoryRest] = useState('');
-            const [doubleDutyDays, setDoubleDutyDays] = useState('');
-            const [lastMonthLastPerson, setLastMonthLastPerson] = useState('kim');
-            const [lastMonthConsecutiveDays, setLastMonthConsecutiveDays] = useState(1);
-            const [suggestedDays, setSuggestedDays] = useState([]);
-            const [kimName, setKimName] = useState('김철수');
-            const [parkName, setParkName] = useState('박영희');
-            const [isAuthReady, setIsAuthReady] = useState(false);
-            const [isLoading, setIsLoading] = useState(true);
-            const calendarRef = useRef(null);
-            const toastTimeoutRef = useRef(null);
-            const doubleDutyDaysSet = useRef(new Set());
 
-            const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+            const isSaving = useRef(false);
 
-            /**
-             * 지정된 날짜의 요일을 반환합니다.
-             * @param {Date} date - 날짜 객체
-             * @returns {string} 요일 (예: '월')
-             */
-            const getWeekday = (date) => WEEKDAYS[date.getDay()];
-            
-            /**
-             * 화면 하단에 사용자 정의 메시지 박스를 표시합니다.
-             * @param {string} msg - 표시할 메시지
-             * @param {boolean} error - 에러 메시지 여부 (색상 변경)
-             */
-            const showToast = (msg, error = false) => {
-                // 이전 타임아웃이 있으면 초기화
-                if (toastTimeoutRef.current) {
-                    clearTimeout(toastTimeoutRef.current);
-                }
-                
-                setToastMessage(msg);
-                setIsError(error);
+            // Toast 메시지 표시 함수
+            const showToast = (message, isError = false) => {
+                setToastMessage(message);
+                setIsError(isError);
                 setIsToastVisible(true);
-                
-                // 3초 후 메시지 숨기기
-                toastTimeoutRef.current = setTimeout(() => {
+                setTimeout(() => {
                     setIsToastVisible(false);
-                    setToastMessage('');
-                }, 3000);
+                }, 3000); // 3초 후에 토스트 메시지를 숨깁니다.
             };
 
-            /**
-             * '3일 근무 3일 휴무' 패턴으로 근무표를 생성합니다.
-             */
-            const calculateThreeOnThreeOffSchedule = (startDateStr, lastPerson, lastDays, kimRest, parkRest, bothWork) => {
-                if (!startDateStr) return { schedule: [], kimDays: 0, parkDays: 0 };
-                
-                const start = new Date(startDateStr);
-                const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
-                const data = [];
-
-                const kimRestDays = new Set(kimRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                const parkRestDays = new Set(parkRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                const bothWorkDays = new Set(bothWork.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                
-                let kimWorkCount = 0;
-                let parkWorkCount = 0;
-                
-                let cycleIndex = 0;
-                if (lastPerson === 'kim') {
-                    cycleIndex = lastDays;
-                } else {
-                    cycleIndex = lastDays + 3;
-                }
-                
-                for (let i = 0; i < daysInMonth; i++) {
-                    const currentDate = new Date(start);
-                    currentDate.setDate(start.getDate() + i);
-                    const day = currentDate.getDate();
-                    const weekday = getWeekday(currentDate);
-
-                    let kimWorks = (cycleIndex % 6) < 3;
-                    let parkWorks = (cycleIndex % 6) >= 3;
-                    
-                    if (bothWorkDays.has(day)) {
-                        kimWorks = true;
-                        parkWorks = true;
-                    } else if (kimRestDays.has(day)) {
-                        kimWorks = false;
-                        parkWorks = true;
-                    } else if (parkRestDays.has(day)) {
-                        kimWorks = true;
-                        parkWorks = false;
-                    }
-
-                    if (kimWorks) kimWorkCount++;
-                    if (parkWorks) parkWorkCount++;
-
-                    data.push({
-                        date: day,
-                        weekday: weekday,
-                        kim: kimWorks ? '근무' : '휴무',
-                        park: parkWorks ? '근무' : '휴무',
-                        isCurrentMonth: true
-                    });
-                    
-                    cycleIndex = (cycleIndex + 1) % 6;
-                }
-                
-                return { schedule: data, kimDays: kimWorkCount, parkDays: parkWorkCount };
-            };
-
-            /**
-             * 근무표 데이터를 생성합니다.
-             */
-            const generateSchedule = () => {
-                if (!startDate) {
-                    showToast('시작 날짜를 선택해주세요.', true);
-                    return;
-                }
-                
-                const { schedule, kimDays, parkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, doubleDutyDays);
-                
-                setScheduleData(schedule);
-                setKimWorkDays(kimDays);
-                setParkWorkDays(parkDays);
-                
-                doubleDutyDaysSet.current = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-            };
-
-            /**
-             * 현재 근무표 설정을 Firestore에 저장합니다.
-             */
-            const saveSchedule = async () => {
-                if (!isAuthReady) {
-                    showToast('Firebase 인증이 완료되지 않았습니다. 잠시 후 다시 시도해주세요.', true);
-                    return;
-                }
-                const scheduleSettings = {
-                    startDate,
-                    lastMonthLastPerson,
-                    lastMonthConsecutiveDays,
-                    kimName,
-                    parkName,
-                    kimMandatoryRest,
-                    parkMandatoryRest,
-                    doubleDutyDays,
-                    lastUpdated: Date.now()
-                };
-                try {
-                    const docRef = doc(db, `artifacts/${appId}/public/data/schedules`, 'mainSchedule');
-                    await setDoc(docRef, scheduleSettings);
-                    showToast('근무표 설정이 클라우드에 성공적으로 저장되었습니다!');
-                } catch (e) {
-                    console.error("Error saving document: ", e);
-                    showToast('근무표 저장에 실패했습니다. (콘솔 로그 확인)', true);
-                }
-            };
-            
-            /**
-             * 컴포넌트 마운트 시 Firebase 인증 상태를 확인하고 데이터를 불러옵니다.
-             */
+            // Firebase 초기화 및 인증
             useEffect(() => {
-                if (!auth || !signInWithCustomToken) {
-                    setIsLoading(false);
-                    return;
-                }
-
-                const authenticate = async () => {
+                const initFirebase = async () => {
+                    const { auth, signInWithCustomToken, onAuthStateChanged } = window.firebase;
                     try {
-                        await signInWithCustomToken(auth, window.__initial_auth_token);
-                        console.log("Firebase authentication successful.");
-                        setIsAuthReady(true);
-                    } catch (e) {
-                        console.error("Firebase authentication failed:", e);
-                        showToast("Firebase 인증 실패", true);
-                        setIsAuthReady(false);
-                    } finally {
-                        setIsLoading(false);
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        }
+                    } catch (error) {
+                        console.error("Firebase Auth Error:", error);
                     }
                 };
 
-                authenticate();
+                const unsubscribe = onAuthStateChanged(window.firebase.auth, (user) => {
+                    if (user) {
+                        setUserId(user.uid);
+                    } else {
+                        // 사용자 ID가 없는 경우 익명으로 로그인
+                        window.firebase.signInAnonymously(window.firebase.auth)
+                            .then(userCredential => {
+                                setUserId(userCredential.user.uid);
+                            })
+                            .catch(error => {
+                                console.error("Anonymous Sign-in Error:", error);
+                            });
+                    }
+                    setIsAuthReady(true);
+                });
+
+                initFirebase();
+                
+                return () => unsubscribe();
             }, []);
 
-            /**
-             * Firestore에서 근무표 설정을 실시간으로 불러옵니다.
-             */
+            // Firestore 데이터 리스너 설정
             useEffect(() => {
-                if (!db || !isAuthReady) return;
-                
-                const docRef = doc(db, `artifacts/${appId}/public/data/schedules`, 'mainSchedule');
-                const unsubscribe = onSnapshot(docRef, (docSnap) => {
+                if (!isAuthReady || !userId) return;
+
+                const { db, doc, onSnapshot } = window.firebase;
+                const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'shift_schedules', 'schedule_data');
+
+                const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
                     if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        setStartDate(data.startDate || '');
-                        setLastMonthLastPerson(data.lastMonthLastPerson || 'kim');
-                        setLastMonthConsecutiveDays(data.lastMonthConsecutiveDays || 1);
-                        setKimName(data.kimName || '김철수');
-                        setParkName(data.parkName || '박영희');
-                        setKimMandatoryRest(data.kimMandatoryRest || '');
-                        setParkMandatoryRest(data.parkMandatoryRest || '');
-                        setDoubleDutyDays(data.doubleDutyDays || '');
+                        setData(docSnap.data());
                     } else {
-                         // 저장된 데이터가 없는 경우 오늘 날짜로 초기화
-                        const today = new Date().toISOString().split('T')[0];
-                        setStartDate(today);
+                        setData(null);
                     }
                 }, (error) => {
-                    console.error("Error fetching document: ", error);
-                    showToast("데이터를 불러오는 데 실패했습니다.", true);
+                    console.error("Firestore Snapshot Error:", error);
+                    showToast('데이터를 불러오는 데 실패했습니다.', true);
                 });
 
-                // cleanup function
                 return () => unsubscribe();
-            }, [db, isAuthReady]);
+            }, [isAuthReady, userId]);
 
-            // 근무표 설정 데이터가 변경될 때마다 근무표를 재생성합니다.
-            useEffect(() => {
-                if(isAuthReady) {
-                    generateSchedule();
-                }
-            }, [startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, doubleDutyDays, kimName, parkName, isAuthReady]);
-            
-            /**
-             * 근무 일수를 정확히 16일에 맞추기 위한 '전원 근무일'을 제안합니다.
-             * 이때, 3일 연속 휴무 중간을 끊지 않도록 제안합니다.
-             * 또한, 전원 근무일 사이에는 최소 2일의 휴무일을 보장합니다.
-             */
-            const suggestDoubleDutyDays = () => {
-                if (!startDate) {
-                    showToast('시작 날짜를 먼저 선택해주세요.', true);
+            // 현재 날짜의 근무표 데이터 저장
+            const handleSave = async () => {
+                if (!isAuthReady || !userId || isSaving.current) {
+                    showToast('데이터를 저장할 수 없습니다. 잠시 후 다시 시도해 주세요.', true);
                     return;
                 }
-                
-                const start = new Date(startDate);
-                const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
-                const availableDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-
-                // 필수 휴무일 및 기존 전원 근무일 세트 생성
-                const kimRestDays = new Set(kimMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                const parkRestDays = new Set(parkMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                const currentDoubleDutySet = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                
-                // 순수 3on-3off 패턴의 스케줄을 미리 계산합니다.
-                const rawSchedule = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, '', '', '').schedule;
-                
-                // 전원 근무일을 제외한 기본 근무 일수 계산
-                const { kimDays: baseKimDays, parkDays: baseParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, '');
-
-                const suggestions = [];
-
-                // 이미 16일인 경우
-                const currentKimDays = baseKimDays + currentDoubleDutySet.size;
-                const currentParkDays = baseParkDays + currentDoubleDutySet.size;
-                if (currentKimDays === 16 && currentParkDays === 16) {
-                    showToast('근무일수가 이미 16/16으로 맞춰져 있습니다.', false);
-                    setSuggestedDays([]);
+                if (!data) {
+                    showToast('저장할 데이터가 없습니다.', true);
                     return;
                 }
-                
-                // 단일 날짜 추가로 16일이 되는 경우 탐색
-                for (const day of availableDays) {
-                    const dayIndex = day - 1;
-                    
-                    // 필수 휴무일이거나 이미 전원 근무일인 경우 건너뛰기
-                    if (currentDoubleDutySet.has(day) || kimRestDays.has(day) || parkRestDays.has(day)) {
-                        continue;
-                    }
-                    
-                    // 전원 근무일이 3일 휴무 사이를 깨는지 확인합니다.
-                    // 원래 패턴에서 해당 날짜가 특정인의 연속 3일 휴무의 두 번째 날인지 확인합니다.
-                    // day-1, day, day+1 모두 휴무일인 경우
-                    const isBreakingKimRest = dayIndex > 0 && dayIndex < daysInMonth - 1 &&
-                                              rawSchedule[dayIndex - 1].kim === '휴무' &&
-                                              rawSchedule[dayIndex].kim === '휴무' &&
-                                              rawSchedule[dayIndex + 1].kim === '휴무';
-                    
-                    const isBreakingParkRest = dayIndex > 0 && dayIndex < daysInMonth - 1 &&
-                                               rawSchedule[dayIndex - 1].park === '휴무' &&
-                                               rawSchedule[dayIndex].park === '휴무' &&
-                                               rawSchedule[dayIndex + 1].park === '휴무';
 
-                    if (isBreakingKimRest || isBreakingParkRest) {
-                        continue;
-                    }
+                isSaving.current = true;
+                const { db, doc, setDoc } = window.firebase;
+                const userDocRef = doc(db, 'artifacts', appId, 'users', userId, 'shift_schedules', 'schedule_data');
 
-                    // 새로운 전원 근무일이 기존 전원 근무일과 2일 이내로 붙어있는지 확인
-                    const hasNearbyDoubleDuty = Array.from(currentDoubleDutySet).some(d => Math.abs(d - day) <= 2);
-                    if (hasNearbyDoubleDuty) {
-                        continue;
-                    }
-
-                    const tempDoubleDutySet = new Set([...currentDoubleDutySet, day]);
-                    const { kimDays: tempKimDays, parkDays: tempParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, Array.from(tempDoubleDutySet).join(','));
-
-                    if (tempKimDays === 16 && tempParkDays === 16) {
-                        suggestions.push({ days: [day], kim: tempKimDays, park: tempParkDays });
-                    }
+                try {
+                    await setDoc(userDocRef, data);
+                    showToast('근무표가 성공적으로 저장되었습니다!');
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                    showToast('근무표 저장에 실패했습니다.', true);
+                } finally {
+                    isSaving.current = false;
                 }
-                
-                // 두 날짜 추가로 16일이 되는 경우 탐색 (단일 날짜로 해결되지 않았을 때)
-                if (suggestions.length === 0) {
-                    for (let i = 0; i < availableDays.length; i++) {
-                        for (let j = i + 1; j < availableDays.length; j++) {
-                            const day1 = availableDays[i];
-                            const day2 = availableDays[j];
-                            
-                            const day1Index = day1 - 1;
-                            const day2Index = day2 - 1;
+            };
 
-                            if (currentDoubleDutySet.has(day1) || currentDoubleDutySet.has(day2) || kimRestDays.has(day1) || kimRestDays.has(day2) || parkRestDays.has(day1) || parkRestDays.has(day2)) {
-                                continue;
-                            }
-                            
-                            // 전원 근무일이 3일 휴무 사이를 깨는지 확인
-                            const isBreakingKimRest1 = day1Index > 0 && day1Index < daysInMonth - 1 &&
-                                                       rawSchedule[day1Index - 1].kim === '휴무' &&
-                                                       rawSchedule[day1Index].kim === '휴무' &&
-                                                       rawSchedule[day1Index + 1].kim === '휴무';
-                            const isBreakingParkRest1 = day1Index > 0 && day1Index < daysInMonth - 1 &&
-                                                        rawSchedule[day1Index - 1].park === '휴무' &&
-                                                        rawSchedule[day1Index].park === '휴무' &&
-                                                        rawSchedule[day1Index + 1].park === '휴무';
+            // 다음 달로 이동
+            const goToNextMonth = () => {
+                setSelectedDate(prevDate => {
+                    const newDate = new Date(prevDate);
+                    newDate.setMonth(newDate.getMonth() + 1);
+                    return newDate;
+                });
+            };
 
-                            const isBreakingKimRest2 = day2Index > 0 && day2Index < daysInMonth - 1 &&
-                                                       rawSchedule[day2Index - 1].kim === '휴무' &&
-                                                       rawSchedule[day2Index].kim === '휴무' &&
-                                                       rawSchedule[day2Index + 1].kim === '휴무';
-                            const isBreakingParkRest2 = day2Index > 0 && day2Index < daysInMonth - 1 &&
-                                                        rawSchedule[day2Index - 1].park === '휴무' &&
-                                                        rawSchedule[day2Index].park === '휴무' &&
-                                                        rawSchedule[day2Index + 1].park === '휴무';
-                            
-                            if (isBreakingKimRest1 || isBreakingParkRest1 || isBreakingKimRest2 || isBreakingParkRest2) {
-                                continue;
-                            }
+            // 이전 달로 이동
+            const goToPreviousMonth = () => {
+                setSelectedDate(prevDate => {
+                    const newDate = new Date(prevDate);
+                    newDate.setMonth(newDate.getMonth() - 1);
+                    return newDate;
+                });
+            };
 
-                            // 두 날짜가 서로 너무 가깝거나, 기존 전원 근무일과 너무 가까운지 확인
-                            if (Math.abs(day2 - day1) <= 2) {
-                                continue;
-                            }
-                            const hasNearbyDoubleDuty = Array.from(currentDoubleDutySet).some(d => Math.abs(d - day1) <= 2 || Math.abs(d - day2) <= 2);
-                            if (hasNearbyDoubleDuty) {
-                                continue;
-                            }
-                            
-                            const tempDoubleDutySet = new Set([...currentDoubleDutySet, day1, day2]);
-                            // ** 수정: 'tempParkDays: tempParkDays'는 잘못된 변수 이름입니다. 'parkDays: tempParkDays'로 수정합니다. **
-                            const { kimDays: tempKimDays, parkDays: tempParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, Array.from(tempDoubleDutySet).join(','));
-                            
-                            if (tempKimDays === 16 && tempParkDays === 16) {
-                                suggestions.push({ days: [day1, day2], kim: tempKimDays, park: tempParkDays });
-                            }
-                        }
-                    }
+            // 근무표 데이터 생성 또는 업데이트
+            const createCalendarData = (year, month) => {
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 = Sunday, 1 = Monday ...
+
+                const schedule = data?.schedule || {};
+                const dailyData = {};
+
+                for (let i = 1; i <= daysInMonth; i++) {
+                    const date = new Date(year, month, i);
+                    const dateString = date.toISOString().split('T')[0];
+                    const existingDay = schedule[dateString];
+                    dailyData[dateString] = {
+                        date: date.getDate(),
+                        dayOfWeek: date.getDay(),
+                        name: existingDay?.name || 'A',
+                        shift: existingDay?.shift || '근무'
+                    };
                 }
+                return dailyData;
+            };
 
-                if (suggestions.length > 0) {
-                    setSuggestedDays(suggestions);
-                    showToast('근무일수를 16일에 맞출 수 있는 날짜 조합을 선택하세요.');
+            const dailyData = createCalendarData(selectedDate.getFullYear(), selectedDate.getMonth());
+
+            // 근무표 셀 클릭 핸들러
+            const handleCellClick = (dateString) => {
+                if (!data) return;
+                const newSchedule = { ...data.schedule };
+                const day = newSchedule[dateString];
+                
+                if (day.shift === '근무') {
+                    day.shift = '휴무';
+                    day.name = day.name === 'A' ? 'B' : 'A';
                 } else {
-                    setSuggestedDays([]);
-                    showToast('현재 근무표 설정에서는 근무일수 16/16을 맞출 수 있는 방법이 없습니다.', false);
-                }
-            };
-            
-            /**
-             * 추천된 전원 근무일 버튼을 클릭했을 때 호출됩니다.
-             */
-            const handleAddSuggestedDay = (days) => {
-                const newDoubleDutyDays = doubleDutyDays ? `${doubleDutyDays},${days.join(',')}` : `${days.join(',')}`;
-                setDoubleDutyDays(newDoubleDutyDays);
-                setSuggestedDays([]);
-                showToast(`${days.join(', ')}일을 전원 근무일로 지정했습니다.`);
-            };
-            
-            /**
-             * 달력에서 날짜를 클릭하여 근무를 교대하는 함수입니다.
-             */
-            const handleShiftSwap = (index) => {
-                if (scheduleData.length === 0) return;
-
-                const newSchedule = [...scheduleData];
-                const dayToSwap = newSchedule[index];
-                
-                if (!dayToSwap.isCurrentMonth) {
-                    showToast('이전 달의 근무는 변경할 수 없습니다.', true);
-                    return;
+                    day.shift = '근무';
+                    day.name = day.name === 'A' ? 'B' : 'A';
                 }
                 
-                const day = dayToSwap.date;
-                const kimRestDays = new Set(kimMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                const parkRestDays = new Set(parkMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                const bothWorkDays = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-
-                if (bothWorkDays.has(day) || kimRestDays.has(day) || parkRestDays.has(day)) {
-                    showToast('이 날짜는 근무/휴무 지정이 되어 있어 교대할 수 없습니다.', true);
-                    return;
-                }
-
-                const newKimStatus = dayToSwap.park;
-                const newParkStatus = dayToSwap.kim;
-                dayToSwap.kim = newKimStatus;
-                dayToSwap.park = newParkStatus;
-                
-                setScheduleData(newSchedule);
-                showToast(`${dayToSwap.date}일의 근무가 교대되었습니다.`);
+                setData({ ...data, schedule: newSchedule });
             };
 
-            /**
-             * 달력 뷰를 A4 사이즈 이미지로 저장합니다.
-             * 폰트 깨짐 현상을 방지하기 위해 렌더링 스케일을 높이고
-             * 폰트 스타일을 임시로 직접 지정하는 로직을 추가했습니다.
-             *
-             * ** 개선: html2canvas의 scale을 6으로 높여 이미지 품질을 개선합니다. **
-             */
-            const exportCalendarAsImage = () => {
-                if (!calendarRef.current) {
-                    showToast('달력이 아직 렌더링되지 않았습니다.', true);
-                    return;
-                }
-                
-                const calendarElement = calendarRef.current;
-                const boldElements = calendarElement.querySelectorAll('.font-bold, .font-extrabold');
-
-                // 폰트 스타일을 임시로 인라인으로 지정
-                const originalStyles = [];
-                boldElements.forEach(el => {
-                    originalStyles.push({ el, style: el.style.fontWeight });
-                    el.style.fontWeight = 'bold'; // 강제로 굵기 적용
-                });
-
-                // 약간의 지연 후 캡처
-                setTimeout(() => {
-                    html2canvas(calendarElement, {
-                        scale: 6, // 이미지 품질 개선을 위해 스케일을 6으로 증가
-                        useCORS: true,
-                        // html2canvas 옵션을 명시적으로 설정하여 폰트 렌더링 안정성 향상
-                        allowTaint: true,
-                        ignoreElements: (element) => element.id === 'toast-message-container' // 토스트 메시지 제외
-                    }).then(canvas => {
-                        const imgData = canvas.toDataURL('image/png');
-                        const link = document.createElement('a');
-                        link.href = imgData;
-                        link.download = `근무표_${startDate}.png`;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        showToast('근무표 이미지가 저장되었습니다!');
-                    }).catch(err => {
-                        console.error('Error saving image:', err);
-                        showToast('이미지 저장에 실패했습니다.', true);
-                    }).finally(() => {
-                        // 원래 폰트 스타일로 복구
-                        originalStyles.forEach(({ el, style }) => {
-                            el.style.fontWeight = style;
-                        });
-                    });
-                }, 50); // 50ms 지연
+            // 주간 근무 패턴 제안 (예시)
+            const getSuggestedPatterns = () => {
+                return [
+                    { label: '3일 근무 / 1일 휴무', pattern: ['근무', '근무', '근무', '휴무'] },
+                    { label: '4일 근무 / 2일 휴무', pattern: ['근무', '근무', '근무', '근무', '휴무', '휴무'] },
+                    { label: '2일 근무 / 2일 휴무', pattern: ['근무', '근무', '휴무', '휴무'] },
+                ];
             };
 
-            /**
-             * 달력 뷰를 A4 사이즈 PDF로 저장합니다.
-             * 폰트 깨짐 현상을 방지하기 위해 렌더링 스케일을 높이고
-             * 폰트 스타일을 임시로 직접 지정하는 로직을 추가했습니다.
-             *
-             * ** 개선: html2canvas의 scale을 6으로 높여 이미지 품질을 개선합니다. **
-             */
-            const exportCalendarAsPdf = () => {
-                if (!calendarRef.current) {
-                    showToast('달력이 아직 렌더링되지 않았습니다.', true);
-                    return;
+            // 패턴 적용
+            const applyPattern = (pattern) => {
+                if (!data) return;
+                const newSchedule = { ...data.schedule };
+                const allDates = Object.keys(newSchedule).sort();
+                let name = 'A';
+                for (let i = 0; i < allDates.length; i++) {
+                    const dateString = allDates[i];
+                    const shiftStatus = pattern[i % pattern.length];
+                    newSchedule[dateString].shift = shiftStatus;
+                    if (shiftStatus === '근무') {
+                        newSchedule[dateString].name = name;
+                        name = name === 'A' ? 'B' : 'A';
+                    } else {
+                        newSchedule[dateString].name = '휴무';
+                    }
                 }
-
-                const calendarElement = calendarRef.current;
-                const boldElements = calendarElement.querySelectorAll('.font-bold, .font-extrabold');
-
-                // 폰트 스타일을 임시로 인라인으로 지정
-                const originalStyles = [];
-                boldElements.forEach(el => {
-                    originalStyles.push({ el, style: el.style.fontWeight });
-                    el.style.fontWeight = 'bold'; // 강제로 굵기 적용
-                });
-
-                setTimeout(() => {
-                    html2canvas(calendarElement, {
-                        scale: 6, // PDF 품질 개선을 위해 스케일을 6으로 증가
-                        useCORS: true,
-                        allowTaint: true,
-                        ignoreElements: (element) => element.id === 'toast-message-container' // 토스트 메시지 제외
-                    }).then(canvas => {
-                        const imgData = canvas.toDataURL('image/jpeg', 1.0);
-                        const pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
-                        const imgWidth = 210; // A4 width in mm
-                        const pageHeight = 297; // A4 height in mm
-                        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                        let heightLeft = imgHeight;
-                        let position = 0;
-
-                        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-                        heightLeft -= pageHeight;
-
-                        while (heightLeft >= 0) {
-                            position = heightLeft - imgHeight;
-                            pdf.addPage();
-                            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-                            heightLeft -= pageHeight;
-                        }
-
-                        pdf.save(`근무표_${startDate}.pdf`);
-                        showToast('근무표가 PDF 파일로 저장되었습니다!');
-                    }).catch(err => {
-                        console.error('Error saving PDF:', err);
-                        showToast('PDF 저장에 실패했습니다.', true);
-                    }).finally(() => {
-                        // 원래 폰트 스타일로 복구
-                        originalStyles.forEach(({ el, style }) => {
-                            el.style.fontWeight = style;
-                        });
-                    });
-                }, 50);
+                setData({ ...data, schedule: newSchedule });
+                showToast('근무 패턴이 적용되었습니다!');
             };
-            
-            // scheduleData가 변경될 때마다 근무일수를 다시 계산합니다.
-            useEffect(() => {
-                let kimCount = 0;
-                let parkCount = 0;
-                scheduleData.forEach(day => {
-                    if (day.kim === '근무') kimCount++;
-                    if (day.park === '근무') parkCount++;
-                });
-                setKimWorkDays(kimCount);
-                setParkWorkDays(parkCount);
-            }, [scheduleData]);
 
-            /**
-             * Renders the schedule in a calendar format.
-             */
-            const renderCalendar = () => {
-                if (scheduleData.length === 0 || !startDate) {
-                    return (
-                        <div className="text-center text-gray-500 text-lg py-10">
-                            달력을 보려면 먼저 시작 날짜를 선택하고 근무표를 생성해주세요.
-                        </div>
-                    );
-                }
+            // PDF 내보내기 기능 (임시)
+            const handleExportToPDF = () => {
+                showToast('PDF 내보내기 기능은 아직 지원되지 않습니다.');
+            };
 
-                const start = new Date(startDate);
-                const firstDayOfMonth = new Date(start.getFullYear(), start.getMonth(), 1);
-                const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
-                const startDayOfWeek = firstDayOfMonth.getDay();
-                
-                const prevMonth = new Date(start.getFullYear(), start.getMonth(), 0);
-                const daysInPrevMonth = prevMonth.getDate();
-                const prevMonthDays = [];
-                
-                const startCycleIndex = lastMonthLastPerson === 'kim' ? lastMonthConsecutiveDays : lastMonthConsecutiveDays + 3;
-                for (let i = startDayOfWeek - 1; i >= 0; i--) {
-                    const date = daysInPrevMonth - i;
-                    const cycleIndexForDay = (startCycleIndex - (startDayOfWeek - i) + 60) % 6;
-                    const isKimWorking = cycleIndexForDay < 3;
-                    
-                    prevMonthDays.push({
-                        date: date,
-                        weekday: getWeekday(new Date(prevMonth.getFullYear(), prevMonth.getMonth(), date)),
-                        kim: isKimWorking ? '근무' : '휴무',
-                        park: !isKimWorking ? '근무' : '휴무',
-                        isCurrentMonth: false
-                    });
-                }
-                
-                const calendarDays = [...prevMonthDays, ...scheduleData.slice(0, daysInMonth)];
-                
-                // PC에서는 고정 너비, 모바일에서는 100% 너비
-                const calendarContainerClass = `bg-white rounded-xl p-4 shadow-md max-w-2xl mx-auto md:max-w-4xl lg:max-w-5xl xl:max-w-7xl`;
-                
+            // 달력 헤더 렌더링
+            const renderCalendarHeader = () => {
+                const month = selectedDate.getMonth() + 1;
+                const year = selectedDate.getFullYear();
+                const weekDays = ['일', '월', '화', '수', '목', '금', '토'];
                 return (
-                    <div className={calendarContainerClass} ref={calendarRef}>
-                        <div className="text-center text-2xl font-bold mb-4 text-gray-800" data-original-font="bold">
-                            {start.getFullYear()}년 {start.getMonth() + 1}월
-                        </div>
-                        <div className="flex justify-around items-center bg-gray-100 p-2 rounded-lg mb-4 shadow-inner">
-                            <button
-                                onClick={() => setHighlightedPerson(h => h === 'kim' ? null : 'kim')}
-                                className={`flex-1 flex flex-col items-center p-2 rounded-lg shadow-md transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-300 transform hover:scale-105 ${highlightedPerson === 'kim' ? 'bg-blue-100 ring-2 ring-blue-500' : 'bg-white'}`}
+                    <div className="flex flex-col">
+                        <div className="flex justify-between items-center py-4 px-2 bg-white rounded-t-xl shadow-sm">
+                            <button 
+                                onClick={goToPreviousMonth}
+                                className="text-gray-600 hover:text-orange-500 transition-colors duration-200"
                             >
-                                <div className="font-bold text-base md:text-lg text-blue-600 truncate" data-original-font="bold">{kimName}</div>
-                                <div className="text-xl md:text-2xl font-extrabold" data-original-font="extrabold">{kimWorkDays}일</div>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                </svg>
                             </button>
-                            <div className="h-16 w-px bg-gray-300 mx-4"></div>
-                            <button
-                                onClick={() => setHighlightedPerson(h => h === 'park' ? null : 'park')}
-                                className={`flex-1 flex flex-col items-center p-2 rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-red-300 ${highlightedPerson === 'park' ? 'bg-red-100 ring-2 ring-red-500' : 'bg-white'}`}
+                            <h2 className="text-xl md:text-2xl font-bold text-gray-800">{year}년 {month}월</h2>
+                            <button 
+                                onClick={goToNextMonth}
+                                className="text-gray-600 hover:text-orange-500 transition-colors duration-200"
                             >
-                                <div className="font-bold text-base md:text-lg text-red-600 truncate" data-original-font="bold">{parkName}</div>
-                                <div className="text-xl md:text-2xl font-extrabold" data-original-font="extrabold">{parkWorkDays}일</div>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
                             </button>
                         </div>
-                        <div className="grid grid-cols-7 gap-1 text-center text-xs sm:text-sm font-semibold">
-                            {WEEKDAYS.map((day, index) => {
-                                let textColorClass = 'text-gray-600';
-                                if (index === 0) {
-                                    textColorClass = 'text-red-600';
-                                } else if (index === 6) {
-                                    textColorClass = 'text-blue-600';
-                                }
-                                return <div key={day} className={textColorClass}>{day}</div>;
-                            })}
-                        </div>
-                        <div className="grid grid-cols-7 gap-1 mt-2 text-center">
-                            {calendarDays.map((day, index) => {
-                                let kimColorClass, parkColorClass;
-                                let kimFontClass, parkFontClass;
-                                
-                                // '전원 근무일'인 경우 기본 스타일을 정의
-                                const isDoubleDutyDay = day.isCurrentMonth && doubleDutyDaysSet.current.has(day.date);
-                                
-                                if (isDoubleDutyDay) {
-                                    kimColorClass = 'text-blue-600';
-                                    parkColorClass = 'text-red-600';
-                                    kimFontClass = 'font-bold';
-                                    parkFontClass = 'font-bold';
-                                } else {
-                                    // 기본 색상 설정
-                                    if (day.kim === '근무') {
-                                        kimColorClass = 'text-blue-600';
-                                    } else {
-                                        kimColorClass = 'text-blue-400';
-                                    }
-
-                                    if (day.park === '근무') {
-                                        parkColorClass = 'text-red-600';
-                                    } else {
-                                        parkColorClass = 'text-red-400';
-                                    }
-                                    
-                                    // 하이라이트 상태에 따른 색상 및 폰트 변경
-                                    if (highlightedPerson === 'kim') {
-                                        kimFontClass = 'font-bold';
-                                        parkColorClass = 'text-gray-400';
-                                    } else if (highlightedPerson === 'park') {
-                                        parkFontClass = 'font-bold';
-                                        kimColorClass = 'text-gray-400';
-                                    } else {
-                                        kimFontClass = 'font-normal';
-                                        parkFontClass = 'font-normal';
-                                    }
-                                }
-
-                                // 보더 클래스 (PC/모바일 구분)
-                                let highlightClass = 'border-gray-200';
-                                if (isDoubleDutyDay) {
-                                    highlightClass = 'border-4 border-green-500';
-                                } else if (highlightedPerson && day.isCurrentMonth && 
-                                           ((highlightedPerson === 'kim' && day.kim === '근무') || 
-                                            (highlightedPerson === 'park' && day.park === '근무'))) {
-                                    highlightClass = `md:border-4 border-2 ${highlightedPerson === 'kim' ? 'border-blue-500' : 'border-red-500'}`;
-                                }
-                                    
-                                const dayCellClass = day.isCurrentMonth ? '' : 'bg-gray-100 text-gray-400';
-
-                                return (
-                                    <div 
-                                        key={index} 
-                                        onClick={() => day && day.isCurrentMonth && handleShiftSwap(index - prevMonthDays.length)}
-                                        // 고정 높이 제거, 최소 높이와 flexbox로 변경
-                                        className={`rounded-lg p-2 flex flex-col items-center justify-start text-xs sm:text-sm border shadow-sm transition-all duration-200 hover:scale-105 hover:shadow-lg cursor-pointer ${highlightClass} ${dayCellClass} min-h-32`}
-                                    >
-                                        {day.isCurrentMonth ? (
-                                            <>
-                                                <div className="text-gray-900 font-bold mb-1" data-original-font="bold">{day.date}</div>
-                                                <div className={`text-sm truncate w-full px-1 ${kimColorClass} ${kimFontClass} text-center`} data-original-font={kimFontClass === 'font-bold' ? 'bold' : ''}>
-                                                    {kimName} {day.kim === '근무' ? '근무' : '휴무'}
-                                                </div>
-                                                <div className={`text-sm truncate w-full px-1 ${parkColorClass} ${parkFontClass} text-center`} data-original-font={parkFontClass === 'font-bold' ? 'bold' : ''}>
-                                                    {parkName} {day.park === '근무' ? '근무' : '휴무'}
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div className="w-full h-full"></div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                );
-            };
-            
-            // 추천된 전원 근무일 버튼을 렌더링하는 함수
-            const renderSuggestedDays = () => {
-                if (suggestedDays.length === 0) return null;
-
-                return (
-                    <div className="bg-gray-100 p-4 rounded-xl shadow-inner mb-8">
-                        <h3 className="text-lg font-bold text-gray-800 mb-4" data-original-font="bold">근무일수 16일 맞추기 제안:</h3>
-                        <div className="flex flex-wrap gap-2">
-                            {suggestedDays.map((suggestion, index) => (
-                                <button
-                                    key={index}
-                                    onClick={() => handleAddSuggestedDay(suggestion.days)}
-                                    className="py-2 px-4 rounded-lg font-semibold shadow-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-green-300 bg-white text-green-600 border border-green-300 hover:bg-green-50 hover:border-green-500"
-                                >
-                                    {suggestion.days.map(d => `${d}일`).join(', ')} ({suggestion.kim}일 / {suggestion.park}일)
-                                </button>
+                        <div className="grid grid-cols-7 text-center font-bold text-gray-500 mt-2">
+                            {weekDays.map(day => (
+                                <div key={day} className="py-2">{day}</div>
                             ))}
                         </div>
                     </div>
                 );
             };
 
-            if(isLoading) {
+            // 달력 렌더링
+            const renderCalendar = () => {
+                const year = selectedDate.getFullYear();
+                const month = selectedDate.getMonth();
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                const firstDayOfMonth = new Date(year, month, 1).getDay();
+
+                const calendarDays = [];
+                // 이전 달의 빈 공간
+                for (let i = 0; i < firstDayOfMonth; i++) {
+                    calendarDays.push(<div key={`empty-${i}`} className="p-2"></div>);
+                }
+
+                // 이번 달의 날짜들
+                for (let i = 1; i <= daysInMonth; i++) {
+                    const date = new Date(year, month, i);
+                    const dateString = date.toISOString().split('T')[0];
+                    const dayData = dailyData[dateString];
+                    
+                    const shiftStatusClass = dayData?.shift === '근무' 
+                        ? 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200' 
+                        : 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200';
+
+                    const todayClass = date.toDateString() === new Date().toDateString() 
+                        ? 'border-4 border-orange-500' 
+                        : 'border';
+
+                    calendarDays.push(
+                        <div 
+                            key={dateString}
+                            className={`flex flex-col items-center justify-center p-2 rounded-lg cursor-pointer transition-colors duration-200 ${shiftStatusClass} ${todayClass}`}
+                            onClick={() => handleCellClick(dateString)}
+                        >
+                            <p className="text-lg font-semibold">{i}</p>
+                            {/* 모바일에서는 이름을 숨기고, sm 이상 화면에서만 표시 */}
+                            <p className="hidden sm:block text-sm font-semibold">{dayData?.name}</p>
+                            <p className="text-xs md:text-sm font-medium">{dayData?.shift}</p>
+                        </div>
+                    );
+                }
+                
                 return (
-                    <div className="flex items-center justify-center min-h-screen text-2xl font-bold text-gray-700">
-                        <svg className="animate-spin -ml-1 mr-3 h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        앱 로딩 중...
+                    <div className="bg-white rounded-xl shadow-lg p-4">
+                        {renderCalendarHeader()}
+                        <div className="grid grid-cols-7 gap-2 mt-4">
+                            {calendarDays}
+                        </div>
                     </div>
                 );
-            }
+            };
 
+            // 제안된 패턴 버튼 렌더링
+            const renderSuggestedDays = () => (
+                <div className="space-y-2">
+                    <h3 className="text-md font-semibold text-gray-700">추천 근무 패턴</h3>
+                    <div className="flex flex-wrap gap-2">
+                        {getSuggestedPatterns().map(pattern => (
+                            <button
+                                key={pattern.label}
+                                className="bg-orange-500 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-orange-600 transition-colors duration-200 text-sm md:text-base"
+                                onClick={() => applyPattern(pattern.pattern)}
+                            >
+                                {pattern.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+
+            // 메인 컴포넌트 렌더링
             return (
-                <div className="p-4 md:p-8 min-h-screen flex justify-center">
-                    <div className="w-full max-w-7xl bg-white shadow-xl rounded-2xl p-6 md:p-10 border border-gray-200">
-                        <h1 className="text-3xl font-bold text-center mb-6 text-gray-800" data-original-font="bold">2인 교대 야간 근무표</h1>
-                        
-                        <div className="space-y-4 mb-8">
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
-                                <div className="flex-1 w-full">
-                                    <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">시작 날짜 선택</label>
-                                    <input type="date" id="startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-                                </div>
-                                <div className="flex-1 w-full">
-                                    <label htmlFor="firstPerson" className="block text-sm font-medium text-gray-700 mb-1">전월 마지막 근무자</label>
-                                    <select id="firstPerson" value={lastMonthLastPerson} onChange={e => setLastMonthLastPerson(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                        <option value="kim">{kimName}</option>
-                                        <option value="park">{parkName}</option>
-                                    </select>
-                                </div>
-                            </div>
-                            {/* 이름 변경 입력란 */}
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
-                                <div className="flex-1 w-full">
-                                    <label htmlFor="kimName" className="block text-sm font-medium text-gray-700 mb-1">근무자 1 이름</label>
-                                    <input type="text" id="kimName" value={kimName} onChange={e => setKimName(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="김철수"/>
-                                </div>
-                                <div className="flex-1 w-full">
-                                    <label htmlFor="parkName" className="block text-sm font-medium text-gray-700 mb-1">근무자 2 이름</label>
-                                    <input type="text" id="parkName" value={parkName} onChange={e => setParkName(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="박영희"/>
-                                </div>
-                            </div>
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
-                                <div className="flex-1 w-full">
-                                    <label htmlFor="lastMonthConsecutiveDays" className="block text-sm font-medium text-gray-700 mb-1">전월 마지막 연속 근무일수 (1~4일)</label>
-                                    <select id="lastMonthConsecutiveDays" value={lastMonthConsecutiveDays} onChange={e => setLastMonthConsecutiveDays(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                        <option value="1">1일</option>
-                                        <option value="2">2일</option>
-                                        <option value="3">3일</option>
-                                        <option value="4">4일</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
-                                <div className="flex-1 w-full">
-                                    <label htmlFor="kimRestDays" className="block text-sm font-medium text-gray-700 mb-1">{kimName} 필수 휴무일 (예: 5,10,15)</label>
-                                    <input type="text" id="kimRestDays" value={kimMandatoryRest} onChange={e => setKimMandatoryRest(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="날짜를 쉼표로 구분하여 입력"/>
-                                </div>
-                                <div className="flex-1 w-full">
-                                    <label htmlFor="parkRestDays" className="block text-sm font-medium text-gray-700 mb-1">{parkName} 필수 휴무일 (예: 7,12,20)</label>
-                                    <input type="text" id="parkRestDays" value={parkMandatoryRest} onChange={e => setParkMandatoryRest(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="날짜를 쉼표로 구분하여 입력"/>
-                                </div>
-                            </div>
-                            <div className="flex-1 w-full">
-                                <label htmlFor="doubleDutyDays" className="block text-sm font-medium text-gray-700 mb-1">전원 근무일 (예: 11,25)</label>
-                                <input type="text" id="doubleDutyDays" value={doubleDutyDays} onChange={e => setDoubleDutyDays(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="날짜를 쉼표로 구분하여 입력"/>
-                            </div>
-                            
-                            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-                                <button onClick={() => generateSchedule()} className="flex-1 w-full py-3 px-6 text-white font-semibold rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-blue-300 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
-                                    근무표 생성하기
+                <div className="min-h-screen bg-gray-100 p-4 md:p-8 flex items-center justify-center">
+                    <div className="w-full max-w-4xl space-y-6">
+                        <div className="flex flex-col sm:flex-row justify-between items-center mb-6 space-y-4 sm:space-y-0">
+                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">2인 교대 야간 근무표</h1>
+                            <div className="flex space-x-2">
+                                <button 
+                                    onClick={handleSave} 
+                                    className="bg-green-500 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:bg-green-600 transition-colors duration-200 text-sm md:text-base"
+                                >
+                                    저장하기
                                 </button>
-                                <button onClick={() => suggestDoubleDutyDays()} className="flex-1 w-full py-3 px-6 text-white font-semibold rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-blue-300 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700">
-                                    전원 근무일 제안
-                                </button>
-                            </div>
-                            {/* 저장 및 내보내기 버튼 추가 */}
-                            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mt-4">
-                                <button onClick={saveSchedule} className="flex-1 w-full py-3 px-6 text-white font-semibold rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-indigo-300 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700">
-                                    근무표 클라우드에 저장하기
-                                </button>
-                                <button onClick={exportCalendarAsImage} className="flex-1 w-full py-3 px-6 text-white font-semibold rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-pink-300 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700">
-                                    이미지로 저장하기
-                                </button>
-                                <button onClick={exportCalendarAsPdf} className="flex-1 w-full py-3 px-6 text-white font-semibold rounded-lg shadow-md transition-all duration-200 hover:scale-105 active:scale-95 focus:outline-none focus:ring-4 focus:ring-orange-300 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700">
+                                <button 
+                                    onClick={handleExportToPDF} 
+                                    className="bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg hover:from-orange-600 hover:to-orange-700 transition-colors duration-200 text-sm md:text-base"
+                                >
                                     PDF로 내보내기
                                 </button>
                             </div>
@@ -894,7 +380,6 @@
                     {isToastVisible && (
                         <div 
                             className="fixed inset-x-0 bottom-4 z-10 flex items-center justify-center pointer-events-none"
-                            id="toast-message-container"
                         >
                             <div 
                                 className={`bg-white rounded-xl shadow-lg p-4 text-center transform transition-transform duration-300 ease-out 
