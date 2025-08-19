@@ -6,8 +6,18 @@
     <title>2인 교대 야간 근무표</title>
     <!-- Favicon: 기깔나는 근무표 아이콘 SVG를 추가했습니다. -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2' ry='2'%3E%3C/rect%3E%3Cline x1='16' y1='2' x2='16' y2='6'%3E%3C/line%3E%3Cline x1='8' y1='2' x2='8' y2='6'%3E%3C/line%3E%3Cline x1='3' y1='10' x2='21' y2='10'%3E%3C/line%3E%3Cpath d='M12 14v4'/%3E%3Cpath d='M10 16h4'/%3E%3C/svg%3E">
+    <!-- Noto Sans KR 폰트를 로드합니다. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&display=swap" rel="stylesheet">
     <!-- Tailwind CSS CDN을 로드합니다. -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Tailwind CSS의 기본 sans 폰트를 Noto Sans KR로 설정합니다. */
+        :root {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+    </style>
     <!-- React 및 ReactDOM CDN을 로드하여 React 앱을 브라우저에서 직접 실행합니다. -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -134,8 +144,7 @@
                 const kimRestDays = new Set(kimRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const parkRestDays = new Set(parkRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const bothWorkDays = new Set(bothWork.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                doubleDutyDaysSet.current = bothWorkDays;
-
+                
                 let kimWorkCount = 0;
                 let parkWorkCount = 0;
                 
@@ -197,6 +206,8 @@
                 setScheduleData(schedule);
                 setKimWorkDays(kimDays);
                 setParkWorkDays(parkDays);
+                
+                doubleDutyDaysSet.current = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
             };
 
             /**
@@ -303,10 +314,15 @@
                 }
                 
                 const kimRestDays = new Set(kimMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
-                const parkRestDays = new Set(parkRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
+                const parkRestDays = new Set(parkMandatoryRest.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 const currentDoubleDutySet = new Set(doubleDutyDays.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)));
                 
+                // 전원 근무일을 제외한 기본 근무 일수 계산
                 const { kimDays: baseKimDays, parkDays: baseParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, '');
+
+                // 현재 전원 근무일을 포함한 근무 일수
+                const currentKimDays = baseKimDays + currentDoubleDutySet.size;
+                const currentParkDays = baseParkDays + currentDoubleDutySet.size;
 
                 const start = new Date(startDate);
                 const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
@@ -314,33 +330,43 @@
 
                 const suggestions = [];
 
-                if (baseKimDays === 16 && baseParkDays === 16) {
+                // 이미 16일인 경우
+                if (currentKimDays === 16 && currentParkDays === 16) {
                     showToast('근무일수가 이미 16/16으로 맞춰져 있습니다.', false);
                     setSuggestedDays([]);
                     return;
                 }
 
-                setSuggestedDays([]);
-
+                // 단일 날짜 추가로 16일이 되는 경우 탐색
                 for (const day of availableDays) {
-                    if (kimRestDays.has(day) || parkRestDays.has(day) || currentDoubleDutySet.has(day)) continue; 
-                    const tempDoubleDutyDays = [...currentDoubleDutySet, day].join(',');
-                    const { kimDays, parkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkRest, tempDoubleDutyDays);
-                    if (kimDays === 16 && parkDays === 16) {
-                        suggestions.push({ days: [day], kim: kimDays, park: parkDays });
+                    // 이미 전원 근무일이거나, 필수 휴무일인 경우 건너뛰기
+                    if (currentDoubleDutySet.has(day) || kimRestDays.has(day) || parkRestDays.has(day)) {
+                        continue;
+                    }
+
+                    const tempDoubleDutySet = new Set([...currentDoubleDutySet, day]);
+                    const { kimDays: tempKimDays, parkDays: tempParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, Array.from(tempDoubleDutySet).join(','));
+
+                    if (tempKimDays === 16 && tempParkDays === 16) {
+                        suggestions.push({ days: [day], kim: tempKimDays, park: tempParkDays });
                     }
                 }
                 
+                // 두 날짜 추가로 16일이 되는 경우 탐색 (단일 날짜로 해결되지 않았을 때)
                 if (suggestions.length === 0) {
                     for (let i = 0; i < availableDays.length; i++) {
                         for (let j = i + 1; j < availableDays.length; j++) {
                             const day1 = availableDays[i];
                             const day2 = availableDays[j];
-                            if (kimRestDays.has(day1) || kimRestDays.has(day2) || parkRestDays.has(day1) || parkRestDays.has(day2) || currentDoubleDutySet.has(day1) || currentDoubleDutySet.has(day2)) continue;
-                            const tempDoubleDutyDays = [...currentDoubleDutySet, day1, day2].join(',');
-                            const { kimDays, parkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, tempDoubleDutyDays);
-                            if (kimDays === 16 && parkDays === 16) {
-                                suggestions.push({ days: [day1, day2], kim: kimDays, park: parkDays });
+                            if (currentDoubleDutySet.has(day1) || currentDoubleDutySet.has(day2) || kimRestDays.has(day1) || kimRestDays.has(day2) || parkRestDays.has(day1) || parkRestDays.has(day2)) {
+                                continue;
+                            }
+                            
+                            const tempDoubleDutySet = new Set([...currentDoubleDutySet, day1, day2]);
+                            const { kimDays: tempKimDays, parkDays: tempParkDays } = calculateThreeOnThreeOffSchedule(startDate, lastMonthLastPerson, lastMonthConsecutiveDays, kimMandatoryRest, parkMandatoryRest, Array.from(tempDoubleDutySet).join(','));
+                            
+                            if (tempKimDays === 16 && tempParkDays === 16) {
+                                suggestions.push({ days: [day1, day2], kim: tempKimDays, park: tempParkDays });
                             }
                         }
                     }
@@ -351,7 +377,7 @@
                     showToast('근무일수를 16일에 맞출 수 있는 날짜 조합을 선택하세요.');
                 } else {
                     setSuggestedDays([]);
-                    showToast('현재 근무표에서는 근무일수 16/16을 맞출 수 있는 방법이 없습니다.', false);
+                    showToast('현재 근무표 설정에서는 근무일수 16/16을 맞출 수 있는 방법이 없습니다.', false);
                 }
             };
             
@@ -362,7 +388,6 @@
                 const newDoubleDutyDays = doubleDutyDays ? `${doubleDutyDays},${days.join(',')}` : `${days.join(',')}`;
                 setDoubleDutyDays(newDoubleDutyDays);
                 setSuggestedDays([]);
-                generateSchedule();
                 showToast(`${days.join(', ')}일을 전원 근무일로 지정했습니다.`);
             };
             
@@ -413,7 +438,6 @@
                 html2canvas(calendarElement, {
                     scale: 3, // 고해상도 이미지 생성을 위해 스케일 증가
                     useCORS: true,
-                    // 이전에 사용된 windowWidth/Height 옵션을 제거하여 요소의 실제 크기에 맞춰 캔버스를 생성합니다.
                 }).then(canvas => {
                     const imgData = canvas.toDataURL('image/png');
                     const link = document.createElement('a');
